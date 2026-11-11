@@ -39,6 +39,6 @@ jobs:
       - name: Validate SAST rules
         run: |
           version=$(jq -r '.engines[] | select(.name=="opengrep") | .upstream[0].tag' engines/engines.json)
-          docker run --rm -v "$PWD/src/Nightjar.Engines/Rules:/rules:ro" "nightjar-engines/opengrep:$version" validate /rules
+          docker run --rm -v "$PWD/src/Nightjar.Engines/Rules:/rules:ro" "nightjar-engines/opengrep:$version" scan --validate --config /rules --disable-version-check
       - name: Canary
         run: dotnet run --project src/Nightjar.Cli --configuration Release -- canary --container

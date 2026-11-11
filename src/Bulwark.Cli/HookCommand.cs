@@ -41,7 +41,12 @@ internal static class HookCommand
 
         Directory.CreateDirectory(hooks);
         File.WriteAllText(path, $"#!/bin/sh\n{Marker}\nexec bulwark precommit\n");
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        if (!OperatingSystem.IsWindows())
+        {
+            // Git for Windows runs hooks through its own sh and ignores the executable bit.
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
         Console.Error.WriteLine($"Installed {path}. Bypass in an emergency with: git commit --no-verify");
         return Cli.ExitPassed;
     }

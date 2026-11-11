@@ -68,72 +68,11 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
 
         if (UseLocal(spec) is { } localPath)
         {
-            startInfo.FileName = localPath;
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument.Replace(SourceToken, sourcePath).Replace(WorkToken, workPath).Replace(CacheToken, cache ?? ""));
-            }
-
-            foreach (var (key, value) in environment)
-            {
-                startInfo.Environment[key] = value;
-            }
+            ConfigureLocal(startInfo, localPath, arguments, environment, sourcePath, workPath, cache);
         }
         else
         {
-            startInfo.FileName = "docker";
-
-            // Named so a timeout can remove it: killing the docker client leaves the container running.
-            containerName = $"bulwark-{engine}-{Guid.NewGuid():N}"[..40];
-            foreach (var argument in (string[])
-            [
-                "run", "--rm", "--name", containerName,
-                "--network", "bridge",
-                // DAST engines reach Bulwark's scope proxy on the host. Docker Desktop defines this
-                // name already; on Linux it needs mapping to the bridge gateway.
-                "--add-host", "host.docker.internal:host-gateway",
-                "-v", $"{sourcePath}:{ContainerSource}:ro",
-                "-v", $"{workPath}:{containerWork}",
-            ])
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            if (cache is not null)
-            {
-                startInfo.ArgumentList.Add("-v");
-                startInfo.ArgumentList.Add($"{cache}:{ContainerCache}");
-            }
-
-            // On Linux, bind mounts keep host ownership: run as the invoking user so the engine can
-            // write to the work folder and Bulwark can delete what it wrote. (Docker Desktop on
-            // macOS/Windows maps ownership itself.) ZAP's image needs its own user and home.
-            if (OperatingSystem.IsLinux() && !engine.Equals("zap", StringComparison.OrdinalIgnoreCase) && HostUser() is { } user)
-            {
-                startInfo.ArgumentList.Add("--user");
-                startInfo.ArgumentList.Add(user);
-                if (!environment.ContainsKey("HOME"))
-                {
-                    startInfo.ArgumentList.Add("-e");
-                    startInfo.ArgumentList.Add("HOME=/tmp");
-                }
-            }
-
-            // Pass names only (`-e KEY`) and let docker read values from its own environment, so
-            // values such as auth tokens never appear on a command line visible in `ps`.
-            foreach (var (key, value) in environment)
-            {
-                startInfo.ArgumentList.Add("-e");
-                startInfo.ArgumentList.Add(key);
-                startInfo.Environment[key] = value;
-            }
-
-            startInfo.ArgumentList.Add(image);
-
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument.Replace(SourceToken, ContainerSource).Replace(WorkToken, containerWork).Replace(CacheToken, ContainerCache));
-            }
+            containerName = ConfigureContainer(startInfo, engine, image, arguments, environment, sourcePath, workPath, containerWork, cache);
         }
 
         using var process = new Process { StartInfo = startInfo };
@@ -169,6 +108,92 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
         }
 
         return new ToolOutput(process.ExitCode, stdout.ToString(), stderr.ToString());
+    }
+
+    private static void ConfigureLocal(
+        ProcessStartInfo startInfo, string localPath, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment,
+        string sourcePath, string workPath, string? cache)
+    {
+        startInfo.FileName = localPath;
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument.Replace(SourceToken, sourcePath).Replace(WorkToken, workPath).Replace(CacheToken, cache ?? ""));
+        }
+
+        foreach (var (key, value) in environment)
+        {
+            startInfo.Environment[key] = value;
+        }
+    }
+
+    /// <summary>Builds the <c>docker run</c> command line and returns the container's name.</summary>
+    private static string ConfigureContainer(
+        ProcessStartInfo startInfo, string engine, string image, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment,
+        string sourcePath, string workPath, string containerWork, string? cache)
+    {
+        startInfo.FileName = "docker";
+
+        // Named so a timeout can remove it: killing the docker client leaves the container running.
+        var containerName = $"bulwark-{engine}-{Guid.NewGuid():N}"[..40];
+        foreach (var argument in (string[])
+        [
+            "run", "--rm", "--name", containerName,
+            "--network", "bridge",
+            // DAST engines reach Bulwark's scope proxy on the host. Docker Desktop defines this
+            // name already; on Linux it needs mapping to the bridge gateway.
+            "--add-host", "host.docker.internal:host-gateway",
+            "-v", $"{sourcePath}:{ContainerSource}:ro",
+            "-v", $"{workPath}:{containerWork}",
+        ])
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        if (cache is not null)
+        {
+            startInfo.ArgumentList.Add("-v");
+            startInfo.ArgumentList.Add($"{cache}:{ContainerCache}");
+        }
+
+        AddUserArguments(startInfo, engine, environment);
+
+        // Pass names only (`-e KEY`) and let docker read values from its own environment, so
+        // values such as auth tokens never appear on a command line visible in `ps`.
+        foreach (var (key, value) in environment)
+        {
+            startInfo.ArgumentList.Add("-e");
+            startInfo.ArgumentList.Add(key);
+            startInfo.Environment[key] = value;
+        }
+
+        startInfo.ArgumentList.Add(image);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument.Replace(SourceToken, ContainerSource).Replace(WorkToken, containerWork).Replace(CacheToken, ContainerCache));
+        }
+
+        return containerName;
+    }
+
+    /// <summary>
+    /// On Linux, bind mounts keep host ownership: run as the invoking user so the engine can
+    /// write to the work folder and Bulwark can delete what it wrote. (Docker Desktop on
+    /// macOS/Windows maps ownership itself.) ZAP's image needs its own user and home.
+    /// </summary>
+    private static void AddUserArguments(ProcessStartInfo startInfo, string engine, IReadOnlyDictionary<string, string> environment)
+    {
+        if (!OperatingSystem.IsLinux() || engine.Equals("zap", StringComparison.OrdinalIgnoreCase) || HostUser() is not { } user)
+        {
+            return;
+        }
+
+        startInfo.ArgumentList.Add("--user");
+        startInfo.ArgumentList.Add(user);
+        if (!environment.ContainsKey("HOME"))
+        {
+            startInfo.ArgumentList.Add("-e");
+            startInfo.ArgumentList.Add("HOME=/tmp");
+        }
     }
 
     [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "getuid")]

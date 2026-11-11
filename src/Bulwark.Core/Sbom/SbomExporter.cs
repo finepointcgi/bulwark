@@ -39,28 +39,32 @@ public static class SbomExporter
         var vulnerabilities = new JsonArray();
         foreach (var f in findings.Where(f => f.Category == FindingCategory.Vulnerability && f.Package is not null))
         {
-            var (state, response, justification) = VexFor(f.Triage, f.Reachability);
-            var analysis = new JsonObject { ["state"] = state };
-            if (response is not null) { analysis["response"] = new JsonArray(response); }
-            if (justification is not null) { analysis["justification"] = justification; }
-            if (f.Reachability == Reachability.NotImported) { analysis["detail"] = "Not imported directly by first-party code (may still be reachable through another dependency)."; }
-
-            var package = f.Package!;
-            var key = package.Purl ?? $"{package.Name}@{package.Version}";
-            var vulnerability = new JsonObject
-            {
-                ["id"] = f.RuleId,
-                ["source"] = new JsonObject { ["name"] = f.RuleId.StartsWith("GHSA", StringComparison.OrdinalIgnoreCase) ? "GitHub" : "OSV" },
-                ["ratings"] = new JsonArray(new JsonObject { ["severity"] = f.Severity.ToString().ToLowerInvariant() }),
-                ["description"] = f.Title,
-                ["analysis"] = analysis,
-                ["affects"] = new JsonArray(new JsonObject { ["ref"] = refs.TryGetValue(key, out var r) && r.Length > 0 ? r : key }),
-            };
-            vulnerabilities.Add(vulnerability);
+            vulnerabilities.Add(VulnerabilityOf(f, refs));
         }
 
         root["vulnerabilities"] = vulnerabilities;
         return root.ToJsonString(Pretty);
+    }
+
+    private static JsonObject VulnerabilityOf(Finding f, Dictionary<string, string> refs)
+    {
+        var (state, response, justification) = VexFor(f.Triage, f.Reachability);
+        var analysis = new JsonObject { ["state"] = state };
+        if (response is not null) { analysis["response"] = new JsonArray(response); }
+        if (justification is not null) { analysis["justification"] = justification; }
+        if (f.Reachability == Reachability.NotImported) { analysis["detail"] = "Not imported directly by first-party code (may still be reachable through another dependency)."; }
+
+        var package = f.Package!;
+        var key = package.Purl ?? $"{package.Name}@{package.Version}";
+        return new JsonObject
+        {
+            ["id"] = f.RuleId,
+            ["source"] = new JsonObject { ["name"] = f.RuleId.StartsWith("GHSA", StringComparison.OrdinalIgnoreCase) ? "GitHub" : "OSV" },
+            ["ratings"] = new JsonArray(new JsonObject { ["severity"] = f.Severity.ToString().ToLowerInvariant() }),
+            ["description"] = f.Title,
+            ["analysis"] = analysis,
+            ["affects"] = new JsonArray(new JsonObject { ["ref"] = refs.TryGetValue(key, out var r) && r.Length > 0 ? r : key }),
+        };
     }
 
     /// <summary>SPDX 2.3 JSON. Licenses that are not valid SPDX expressions are recorded as NOASSERTION.</summary>

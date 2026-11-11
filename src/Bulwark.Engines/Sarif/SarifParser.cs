@@ -34,33 +34,36 @@ public static class SarifParser
                 continue;
             }
 
-            foreach (var result in results.EnumerateArray())
-            {
-                var rawRuleId = Str(result, "ruleId") ?? "unknown";
-                rules.TryGetValue(rawRuleId, out var rule);
-                var ruleId = normalizeRuleId(rawRuleId);
-
-                var (path, line, snippet) = ReadLocation(result, sourcePath);
-                snippet ??= path is null ? null : ReadSourceLines(sourcePath, path, line, line);
-
-                var message = result.TryGetProperty("message", out var m) ? Str(m, "text") : null;
-                findings.Add(new Finding
-                {
-                    Id = Fingerprint.ForCode(ruleId, path ?? "", snippet, line),
-                    Category = category,
-                    Severity = SeverityOf(result, rule),
-                    RuleId = ruleId,
-                    Title = rule?.Title ?? message ?? ruleId,
-                    Description = message ?? rule?.Title,
-                    Location = path is null ? null : new SourceLocation(path, line, null, snippet?.Trim()),
-                    References = rule?.HelpUri is { } uri ? [uri] : [],
-                    Aliases = rule?.Cwes ?? [],
-                    Engines = [engine],
-                });
-            }
+            findings.AddRange(results.EnumerateArray().Select(result => ToFinding(result, rules, sourcePath, engine, category, normalizeRuleId)));
         }
 
         return findings;
+    }
+
+    private static Finding ToFinding(
+        JsonElement result, Dictionary<string, RuleInfo> rules, string sourcePath, string engine, FindingCategory category, Func<string, string> normalizeRuleId)
+    {
+        var rawRuleId = Str(result, "ruleId") ?? "unknown";
+        rules.TryGetValue(rawRuleId, out var rule);
+        var ruleId = normalizeRuleId(rawRuleId);
+
+        var (path, line, snippet) = ReadLocation(result, sourcePath);
+        snippet ??= path is null ? null : ReadSourceLines(sourcePath, path, line, line);
+
+        var message = result.TryGetProperty("message", out var m) ? Str(m, "text") : null;
+        return new Finding
+        {
+            Id = Fingerprint.ForCode(ruleId, path ?? "", snippet, line),
+            Category = category,
+            Severity = SeverityOf(result, rule),
+            RuleId = ruleId,
+            Title = rule?.Title ?? message ?? ruleId,
+            Description = message ?? rule?.Title,
+            Location = path is null ? null : new SourceLocation(path, line, null, snippet?.Trim()),
+            References = rule?.HelpUri is { } uri ? [uri] : [],
+            Aliases = rule?.Cwes ?? [],
+            Engines = [engine],
+        };
     }
 
     private sealed record RuleInfo(string? Title, string? DefaultLevel, double? SecuritySeverity, string? HelpUri, List<string> Cwes);
@@ -83,28 +86,7 @@ public static class SarifParser
 
             var title = rule.TryGetProperty("shortDescription", out var s) ? Str(s, "text") : null;
             var level = rule.TryGetProperty("defaultConfiguration", out var config) ? Str(config, "level") : null;
-            double? securitySeverity = null;
-            var cwes = new List<string>();
-            if (rule.TryGetProperty("properties", out var properties))
-            {
-                if (properties.TryGetProperty("security-severity", out var score))
-                {
-                    securitySeverity = score.ValueKind switch
-                    {
-                        JsonValueKind.Number => score.GetDouble(),
-                        JsonValueKind.String when double.TryParse(score.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) => d,
-                        _ => null,
-                    };
-                }
-
-                if (properties.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
-                {
-                    cwes.AddRange(tags.EnumerateArray()
-                        .Select(t => t.GetString() ?? "")
-                        .Where(t => t.StartsWith("CWE-", StringComparison.OrdinalIgnoreCase))
-                        .Select(t => t.Split(':')[0].Trim()));
-                }
-            }
+            var (securitySeverity, cwes) = ReadProperties(rule);
 
             // Opengrep repeats the full message as shortDescription; keep titles to one line.
             if (title is not null && (title.StartsWith("Opengrep Finding:", StringComparison.Ordinal) || title.StartsWith("Semgrep Finding:", StringComparison.Ordinal)))
@@ -116,6 +98,36 @@ public static class SarifParser
         }
 
         return rules;
+    }
+
+    private static (double? SecuritySeverity, List<string> Cwes) ReadProperties(JsonElement rule)
+    {
+        double? securitySeverity = null;
+        var cwes = new List<string>();
+        if (!rule.TryGetProperty("properties", out var properties))
+        {
+            return (null, cwes);
+        }
+
+        if (properties.TryGetProperty("security-severity", out var score))
+        {
+            securitySeverity = score.ValueKind switch
+            {
+                JsonValueKind.Number => score.GetDouble(),
+                JsonValueKind.String when double.TryParse(score.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) => d,
+                _ => null,
+            };
+        }
+
+        if (properties.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
+        {
+            cwes.AddRange(tags.EnumerateArray()
+                .Select(t => t.GetString() ?? "")
+                .Where(t => t.StartsWith("CWE-", StringComparison.OrdinalIgnoreCase))
+                .Select(t => t.Split(':')[0].Trim()));
+        }
+
+        return (securitySeverity, cwes);
     }
 
     private static Severity SeverityOf(JsonElement result, RuleInfo? rule)

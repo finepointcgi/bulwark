@@ -59,6 +59,9 @@ public static class BuiltInManifest
 
             // No upstream image; built from the pinned release binary by engines/opengrep/Dockerfile.
             new EngineSpec { Name = "opengrep", Version = "v1.33.1", Image = "bulwark-engines/opengrep", Binary = "opengrep" },
+
+            // Trivy tags have no "v" prefix.
+            new EngineSpec { Name = "trivy", Version = "0.76.1", Image = "ghcr.io/aquasecurity/trivy", Binary = "trivy" },
         ],
     };
 }

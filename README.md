@@ -1,7 +1,7 @@
 # Bulwark
 
 Open-source, self-updating application security scanning: dependency vulnerabilities (SCA),
-SBOMs, license compliance, SAST and secrets (IaC on the roadmap), in one tool.
+SBOMs, license compliance, SAST, secrets and infrastructure-as-code, in one tool.
 An open alternative to Black Duck, Coverity, SonarQube and Fortify.
 
 Bulwark doesn't reinvent scanners. It runs proven open-source engines at **signed, pinned
@@ -109,8 +109,8 @@ The review above is static. The next phase points an AI agent at a **running** i
 | Syft | SBOM (CycloneDX) and licenses | ✅ |
 | OSV-Scanner | Known vulnerabilities | ✅ |
 | Opengrep | SAST (C#, JS/TS, Python, Java, Go) | ✅ |
-| gitleaks | Secrets in the working tree | ✅ |
-| Trivy / Checkov | Containers and IaC | planned |
+| gitleaks | Secrets in current files and git history | ✅ |
+| Trivy | IaC: Terraform, CloudFormation, Kubernetes, Helm, Dockerfile, ARM, Ansible | ✅ |
 | Infer / Clang Static Analyzer | Deep C/C++/Java analysis | planned |
 
 Adding an engine means one class implementing `IEngine` and one manifest entry. Any engine
@@ -132,19 +132,34 @@ pinned release binary by SHA-256):
 docker build -t bulwark-engines/opengrep:v1.33.1 engines/opengrep
 ```
 
+### Infrastructure as code
+
+Trivy runs whenever the project has Terraform, a Dockerfile, a Helm chart or a compose file,
+or YAML/JSON that looks like Kubernetes, CloudFormation or ARM (detected by peeking at file
+contents). It uses the checks built into the pinned Trivy version (`--skip-check-update`), so
+results change only when the manifest moves Trivy forward, and the scan works offline.
+
 ### Secrets
 
 gitleaks' raw report contains the secrets, so Bulwark parses it and deletes it right away.
 Findings keep only a hash of the value (for a stable id) and the first 4 characters (to
 identify the key type). The value itself is never written to reports, SARIF or the dashboard.
-History scanning (`gitleaks git`) is not wired up yet: today only the working tree is scanned.
+When the scan root is a git repository, Bulwark also scans its **full history** by default. A
+secret found in both the current files and history becomes one finding noting the commit that
+first added it. A secret that was deleted but still lives in history gets its own "Secret in git
+history" finding, because anyone with a clone can still read it. Commit author names and emails
+are not stored.
+
+- `--history off` scans only the current files.
+- `--history origin/main..HEAD` (any `git log` range) scans just a PR's commits, which is fast in CI.
+- For options that start with `--`, use the `=` form: `--history=--since=2025-01-01`.
 
 ## Roadmap
 
 1. Release pipeline: a bot watches upstream engine releases, runs a canary corpus, and opens a
    PR that updates the signed manifest.
 2. Canary check before switching engine versions, with automatic rollback.
-3. IaC adapters (Trivy, Checkov), secrets in git history, more SAST rules.
+3. Container image vulnerability scanning (Trivy image mode), more SAST rules.
 4. Re-check stored SBOMs against new advisories without rescanning code.
 5. Triage persistence (false positive / accepted risk) in the dashboard.
 6. GitHub/GitLab app: PR comments, status checks, auto-fix PRs for dependency bumps.

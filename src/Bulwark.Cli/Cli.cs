@@ -11,6 +11,7 @@ using Bulwark.Engines.Gitleaks;
 using Bulwark.Engines.Opengrep;
 using Bulwark.Engines.Osv;
 using Bulwark.Engines.Syft;
+using Bulwark.Engines.Trivy;
 
 namespace Bulwark.Cli;
 
@@ -73,8 +74,9 @@ internal static class Cli
         [
             new SyftEngine(runner, new LicensePolicy()),
             new OsvScannerEngine(runner),
-            new GitleaksEngine(runner),
+            new GitleaksEngine(runner, HistoryScope.Parse(options.Value("history"))),
             new OpengrepEngine(runner, ruleDirectories),
+            new TrivyIacEngine(runner),
         ];
         var only = options.Value("engines")?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (only is not null)
@@ -280,6 +282,8 @@ internal static class Cli
               bulwark scan [path] [--format table|json|sarif] [--output file]
                                   [--fail-on critical|high|medium|low|none] [--engines a,b] [--container]
                                   [--rules dir1,dir2]   extra Opengrep rule folders
+                                  [--history full|off|<range>]  secrets in git history (default full;
+                                                        e.g. origin/main..HEAD for just a PR's commits)
                                   [--ai claude|ollama] [--ai-model name] [--ai-min-severity medium] [--ai-max 25]
               bulwark engines [--container]        show pinned engines and how each will run
               bulwark update [--url url | --from-file manifest.json] [--key public.pem]

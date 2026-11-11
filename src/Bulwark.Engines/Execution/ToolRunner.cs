@@ -33,9 +33,11 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
 
     public async Task<ToolOutput> RunAsync(
         string engine, IReadOnlyList<string> arguments, string sourcePath, string workPath,
-        TimeSpan timeout, CancellationToken cancellationToken)
+        TimeSpan timeout, CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var spec = Spec(engine);
+        environment ??= new Dictionary<string, string>();
         var startInfo = new ProcessStartInfo
         {
             RedirectStandardOutput = true,
@@ -50,6 +52,11 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
             {
                 startInfo.ArgumentList.Add(argument.Replace(SourceToken, sourcePath).Replace(WorkToken, workPath));
             }
+
+            foreach (var (key, value) in environment)
+            {
+                startInfo.Environment[key] = value;
+            }
         }
         else
         {
@@ -60,11 +67,18 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
                 "--network", "bridge",
                 "-v", $"{sourcePath}:{ContainerSource}:ro",
                 "-v", $"{workPath}:{ContainerWork}",
-                spec.ImageReference,
             ])
             {
                 startInfo.ArgumentList.Add(argument);
             }
+
+            foreach (var (key, value) in environment)
+            {
+                startInfo.ArgumentList.Add("-e");
+                startInfo.ArgumentList.Add($"{key}={value}");
+            }
+
+            startInfo.ArgumentList.Add(spec.ImageReference);
 
             foreach (var argument in arguments)
             {

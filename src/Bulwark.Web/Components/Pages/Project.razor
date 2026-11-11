@@ -1,0 +1,123 @@
+@page "/project/{Key}"
+@inject ReportArchive Archive
+
+<PageTitle>@(_report is null ? "Not found" : System.IO.Path.GetFileName(_report.Project)) · Bulwark</PageTitle>
+
+@if (_report is null)
+{
+    <div class="card"><h2>Project not found</h2><a href="/">Back to all projects</a></div>
+    return;
+}
+
+<div class="card">
+    <h2 style="margin-top:0">@_report.Project</h2>
+    <p class="muted">
+        Scanned @_report.StartedAt.ToLocalTime().ToString("g") in @_report.Seconds.ToString("0.0")s ·
+        manifest #@_report.ManifestSequence ·
+        @string.Join(", ", _report.Engines.Select(e => $"{e.Engine} {e.Version}"))
+    </p>
+    <SeverityCounts Findings="_report.Findings" />
+    @foreach (var failed in _report.Engines.Where(e => !e.Succeeded))
+    {
+        <p class="bad">@failed.Engine failed: @failed.Error</p>
+    }
+</div>
+
+<div class="card">
+    <form method="get" class="filters">
+        <select name="severity">
+            <option value="">Any severity</option>
+            @foreach (var s in Enum.GetValues<Severity>().Reverse())
+            {
+                <option value="@s" selected="@(SeverityFilter == s.ToString())">@s+</option>
+            }
+        </select>
+        <select name="category">
+            <option value="">All categories</option>
+            @foreach (var c in Enum.GetValues<FindingCategory>())
+            {
+                <option value="@c" selected="@(CategoryFilter == c.ToString())">@c</option>
+            }
+        </select>
+        <input name="q" value="@Query" placeholder="Search package, id, title" />
+        <button type="submit">Filter</button>
+        <span class="muted">@_visible.Count of @_report.Findings.Count</span>
+    </form>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Severity</th><th>Category</th><th>Id</th><th>Finding</th><th>Fix</th><th>Engines</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var f in _visible)
+                {
+                    <tr>
+                        <td><span class="sev sev-@f.Severity">@f.Severity.ToString().ToUpperInvariant()</span></td>
+                        <td>@f.Category</td>
+                        <td>
+                            @if (f.References.FirstOrDefault() is { } link)
+                            {
+                                <a href="@link" target="_blank" rel="noopener">@f.RuleId</a>
+                            }
+                            else
+                            {
+                                @f.RuleId
+                            }
+                        </td>
+                        <td>
+                            @f.Title
+                            @if (f.Location?.Path is { } path)
+                            {
+                                <div class="muted"><code>@path</code></div>
+                            }
+                        </td>
+                        <td>@string.Join(" / ", f.FixedVersions)</td>
+                        <td class="muted">@string.Join(", ", f.Engines)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "severity")] public string? SeverityFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "category")] public string? CategoryFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+
+    private ScanReport? _report;
+    private List<Finding> _visible = [];
+
+    protected override void OnParametersSet()
+    {
+        _report = Archive.LoadAll().FirstOrDefault(r => ReportArchive.KeyFor(r.Project) == Key);
+        if (_report is null)
+        {
+            return;
+        }
+
+        IEnumerable<Finding> findings = _report.Findings;
+        if (Enum.TryParse<Severity>(SeverityFilter, out var minimum))
+        {
+            findings = findings.Where(f => f.Severity >= minimum);
+        }
+
+        if (Enum.TryParse<FindingCategory>(CategoryFilter, out var category))
+        {
+            findings = findings.Where(f => f.Category == category);
+        }
+
+        if (!string.IsNullOrWhiteSpace(Query))
+        {
+            findings = findings.Where(f =>
+                f.Title.Contains(Query, StringComparison.OrdinalIgnoreCase)
+                || f.RuleId.Contains(Query, StringComparison.OrdinalIgnoreCase)
+                || f.Aliases.Any(a => a.Contains(Query, StringComparison.OrdinalIgnoreCase))
+                || (f.Package?.Name.Contains(Query, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        _visible = findings.ToList();
+    }
+}

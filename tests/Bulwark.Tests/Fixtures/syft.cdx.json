@@ -1,0 +1,25 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "components": [
+    {
+      "type": "library",
+      "name": "express",
+      "version": "4.19.2",
+      "purl": "pkg:npm/express@4.19.2",
+      "licenses": [ { "license": { "id": "MIT" } } ],
+      "properties": [ { "name": "syft:location:0:path", "value": "/web/package-lock.json" } ]
+    },
+    {
+      "type": "library",
+      "name": "serde",
+      "version": "1.0.200",
+      "purl": "pkg:cargo/serde@1.0.200",
+      "licenses": [ { "expression": "MIT OR Apache-2.0" } ]
+    },
+    {
+      "type": "file",
+      "name": "/web/index.js"
+    }
+  ]
+}

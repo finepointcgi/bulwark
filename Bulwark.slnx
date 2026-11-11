@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bulwark.Ai/Bulwark.Ai.csproj" />
+    <Project Path="src/Bulwark.Cli/Bulwark.Cli.csproj" />
+    <Project Path="src/Bulwark.Core/Bulwark.Core.csproj" />
+    <Project Path="src/Bulwark.Engines/Bulwark.Engines.csproj" />
+    <Project Path="src/Bulwark.Web/Bulwark.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bulwark.Tests/Bulwark.Tests.csproj" />
+  </Folder>
+</Solution>

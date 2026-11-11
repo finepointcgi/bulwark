@@ -1,0 +1,17 @@
+@if (!Findings.Any())
+{
+    <span class="ok">No findings</span>
+}
+else
+{
+    <div class="counts">
+        @foreach (var group in Findings.GroupBy(f => f.Severity).OrderByDescending(g => g.Key))
+        {
+            <span class="sev sev-@group.Key">@group.Count() @group.Key.ToString().ToUpperInvariant()</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Finding> Findings { get; set; } = [];
+}

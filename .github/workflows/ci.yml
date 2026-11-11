@@ -34,11 +34,11 @@ jobs:
             name=$(basename "$dir")
             [ -f "$dir/Dockerfile" ] || continue
             version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' engines/engines.json)
-            docker build -t "bulwark-engines/$name:$version" "$dir"
+            docker build -t "nightjar-engines/$name:$version" "$dir"
           done
       - name: Validate SAST rules
         run: |
           version=$(jq -r '.engines[] | select(.name=="opengrep") | .upstream[0].tag' engines/engines.json)
-          docker run --rm -v "$PWD/src/Bulwark.Engines/Rules:/rules:ro" "bulwark-engines/opengrep:$version" validate /rules
+          docker run --rm -v "$PWD/src/Nightjar.Engines/Rules:/rules:ro" "nightjar-engines/opengrep:$version" validate /rules
       - name: Canary
-        run: dotnet run --project src/Bulwark.Cli --configuration Release -- canary --container
+        run: dotnet run --project src/Nightjar.Cli --configuration Release -- canary --container

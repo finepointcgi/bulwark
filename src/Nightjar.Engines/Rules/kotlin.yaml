@@ -1,0 +1,44 @@
+# Nightjar starter rules for Kotlin (Android and server). Apache-2.0.
+rules:
+  - id: nightjar.kotlin.runtime-exec
+    languages: [kotlin]
+    severity: ERROR
+    message: Command built from a dynamic string. Use ProcessBuilder with separate arguments.
+    metadata: { cwe: "CWE-78", category: security }
+    patterns:
+      - pattern: Runtime.getRuntime().exec($X)
+      - pattern-not: Runtime.getRuntime().exec("...")
+
+  - id: nightjar.kotlin.sql-string-template
+    languages: [kotlin]
+    severity: ERROR
+    message: SQL built with a string template. Use bind parameters.
+    metadata: { cwe: "CWE-89", category: security }
+    pattern-either:
+      - pattern: $DB.rawQuery("...$X...", ...)
+      - pattern: $DB.execSQL("...$X...")
+      - pattern: $S.executeQuery("...$X...")
+
+  - id: nightjar.kotlin.webview-javascript
+    languages: [kotlin]
+    severity: WARNING
+    message: JavaScript enabled in a WebView. Only load trusted content and avoid addJavascriptInterface.
+    metadata: { cwe: "CWE-749", category: security }
+    pattern: $W.settings.javaScriptEnabled = true
+
+  - id: nightjar.kotlin.weak-hash
+    languages: [kotlin]
+    severity: WARNING
+    message: MD5 and SHA-1 are not collision resistant. Use SHA-256 or better.
+    metadata: { cwe: "CWE-328", category: security }
+    pattern-either:
+      - pattern: MessageDigest.getInstance("MD5")
+      - pattern: MessageDigest.getInstance("SHA-1")
+
+  - id: nightjar.kotlin.trust-all-certificates
+    languages: [kotlin]
+    severity: ERROR
+    message: HostnameVerifier that accepts every host disables TLS hostname checks.
+    metadata: { cwe: "CWE-295", category: security }
+    pattern-either:
+      - pattern: HostnameVerifier { _, _ -> true }

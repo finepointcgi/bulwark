@@ -1,0 +1,44 @@
+using System.Diagnostics;
+using Nightjar.Core.Engines;
+using Nightjar.Core.Policy;
+using Nightjar.Engines.Execution;
+
+namespace Nightjar.Engines.Syft;
+
+/// <summary>
+/// Builds the SBOM (CycloneDX) with Syft, publishes it to the scan context for later engines,
+/// and runs the license policy over it.
+/// </summary>
+public sealed class SyftEngine(ToolRunner runner, LicensePolicy licensePolicy) : IEngine
+{
+    public string Name => "syft";
+    public int Order => 10;
+
+    public bool AppliesTo(ScanContext context) => context.Profile.HasDependencies || context.Profile.HasContainers;
+
+    public async Task<EngineResult> RunAsync(ScanContext context, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        const string sbomFile = "sbom.cdx.json";
+
+        var output = await runner.RunAsync(
+            Name,
+            ["scan", $"dir:{ToolRunner.SourceToken}", "-o", $"cyclonedx-json={ToolRunner.WorkToken}/{sbomFile}", "-q"],
+            context.RootPath, context.WorkDirectory, TimeSpan.FromMinutes(10), cancellationToken);
+
+        var sbomPath = Path.Combine(context.WorkDirectory, sbomFile);
+        if (output.ExitCode != 0 || !File.Exists(sbomPath))
+        {
+            return EngineResult.Failed(Name, $"syft exited {output.ExitCode}: {output.StandardError.Trim()}", stopwatch.Elapsed);
+        }
+
+        var json = await File.ReadAllTextAsync(sbomPath, cancellationToken);
+        context.Sbom = CycloneDxParser.Parse(json, context.RootPath);
+
+        // The project is a component of its own SBOM; its license is not a third-party concern.
+        var own = OwnPackages.Find(context.RootPath, context.Profile.Manifests);
+        var thirdParty = context.Sbom with { Components = context.Sbom.Components.Where(c => !own.Contains(c.Package.Name)).ToList() };
+        var findings = licensePolicy.Evaluate(thirdParty).Select(f => f with { Engines = [Name, .. f.Engines] }).ToList();
+        return new EngineResult(Name, findings, stopwatch.Elapsed);
+    }
+}

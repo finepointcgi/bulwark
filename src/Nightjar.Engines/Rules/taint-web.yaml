@@ -1,0 +1,194 @@
+# Nightjar taint rules for more web stacks (Apache-2.0): Spring, ASP.NET Core action parameters, PHP, Ruby on Rails.
+rules:
+  # ---------- Java (Spring MVC) ----------
+  - id: nightjar.taint.java.spring-injection
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: A Spring request parameter reaches a SQL statement or command. Use JdbcTemplate/PreparedStatement parameters and ProcessBuilder with separate arguments.
+    metadata: { cwe: "CWE-74", category: security, confidence: high }
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $RET $METHOD(..., @RequestParam $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $METHOD(..., @PathVariable $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $METHOD(..., @RequestHeader $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $METHOD(..., @RequestBody $T $SRC, ...) { ... }
+          - focus-metavariable: $SRC
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Integer.parseInt(...)
+          - pattern: Long.parseLong(...)
+          - pattern: UUID.fromString(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $JDBC.query($Q, ...)
+              - pattern: $JDBC.queryForObject($Q, ...)
+              - pattern: $JDBC.queryForList($Q, ...)
+              - pattern: $JDBC.update($Q, ...)
+              - pattern: $JDBC.execute($Q)
+              - pattern: $S.executeQuery($Q)
+              - pattern: $S.executeUpdate($Q)
+              - pattern: $EM.createNativeQuery($Q, ...)
+              - pattern: Runtime.getRuntime().exec($Q, ...)
+          - focus-metavariable: $Q
+
+  - id: nightjar.taint.java.spring-path-traversal
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: A Spring request parameter is used to build a file path. Normalize it and check it stays inside the allowed directory.
+    metadata: { cwe: "CWE-22", category: security, confidence: high }
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $RET $METHOD(..., @RequestParam $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $METHOD(..., @PathVariable $T $SRC, ...) { ... }
+          - focus-metavariable: $SRC
+    pattern-sanitizers:
+      - pattern: StringUtils.cleanPath(...)
+      - pattern: $P.getFileName()
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: new File($P, ...)
+              - pattern: new FileInputStream($P)
+              - pattern: Paths.get($P, ...)
+              - pattern: new FileSystemResource($P)
+          - focus-metavariable: $P
+
+  # ---------- C# (ASP.NET Core action parameters) ----------
+  - id: nightjar.taint.csharp.action-parameter
+    mode: taint
+    languages: [csharp]
+    severity: ERROR
+    message: An action parameter bound from the request reaches a SQL command, process or file path. Use parameters, ArgumentList and Path.GetFullPath checks.
+    metadata: { cwe: "CWE-74", category: security, confidence: high }
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $RET $M(..., [FromQuery] $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $M(..., [FromRoute] $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $M(..., [FromBody] $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $M(..., [FromHeader] $T $SRC, ...) { ... }
+              - pattern: |
+                  $RET $M(..., [FromForm] $T $SRC, ...) { ... }
+          - focus-metavariable: $SRC
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: int.Parse(...)
+          - pattern: Guid.Parse(...)
+          - pattern: Path.GetFileName(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: new SqlCommand($Q, ...)
+              - pattern: $DB.FromSqlRaw($Q, ...)
+              - pattern: $DB.ExecuteSqlRaw($Q, ...)
+              - pattern: Process.Start($Q, ...)
+              - pattern: File.ReadAllText($Q)
+              - pattern: File.OpenRead($Q)
+              - pattern: new FileStream($Q, ...)
+          - focus-metavariable: $Q
+
+  # ---------- PHP ----------
+  - id: nightjar.taint.php.injection
+    mode: taint
+    languages: [php]
+    severity: ERROR
+    message: Request data reaches a SQL query, shell command, include or eval. Use prepared statements, escapeshellarg and fixed include paths.
+    metadata: { cwe: "CWE-74", category: security, confidence: high }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $_GET[...]
+          - pattern: $_POST[...]
+          - pattern: $_REQUEST[...]
+          - pattern: $_COOKIE[...]
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: intval(...)
+          - pattern: escapeshellarg(...)
+          - pattern: basename(...)
+          - pattern: $DB->real_escape_string(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: mysqli_query($C, $Q)
+              - pattern: $DB->query($Q)
+              - pattern: system($Q)
+              - pattern: exec($Q, ...)
+              - pattern: shell_exec($Q)
+              - pattern: passthru($Q)
+              - pattern: eval($Q)
+              - pattern: include($Q)
+              - pattern: require($Q)
+              - pattern: file_get_contents($Q)
+              - pattern: unserialize($Q)
+          - focus-metavariable: $Q
+
+  - id: nightjar.taint.php.xss
+    mode: taint
+    languages: [php]
+    severity: ERROR
+    message: Request data is echoed into HTML without escaping. Wrap it in htmlspecialchars().
+    metadata: { cwe: "CWE-79", category: security, confidence: high }
+    pattern-sources:
+      - pattern-either:
+          - pattern: $_GET[...]
+          - pattern: $_POST[...]
+          - pattern: $_REQUEST[...]
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: htmlspecialchars(...)
+          - pattern: htmlentities(...)
+          - pattern: intval(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: echo $X;
+              - pattern: print($X);
+          - focus-metavariable: $X
+
+  # ---------- Ruby (Rails) ----------
+  - id: nightjar.taint.ruby.injection
+    mode: taint
+    languages: [ruby]
+    severity: ERROR
+    message: Request params reach a SQL fragment, shell command, eval or file path. Use ActiveRecord placeholders, array-form system calls and File.basename.
+    metadata: { cwe: "CWE-74", category: security, confidence: high }
+    pattern-sources:
+      - pattern-either:
+          - pattern: params[...]
+          - pattern: request.headers[...]
+          - pattern: cookies[...]
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: $X.to_i
+          - pattern: File.basename(...)
+          - pattern: Shellwords.escape(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $M.where($Q)
+              - pattern: $M.find_by_sql($Q)
+              - pattern: $M.order($Q)
+              - pattern: ActiveRecord::Base.connection.execute($Q)
+              - pattern: system($Q)
+              - pattern: exec($Q)
+              - pattern: eval($Q)
+              - pattern: send_file($Q, ...)
+              - pattern: File.read($Q)
+              - pattern: IO.popen($Q, ...)
+              - pattern: Kernel.open($Q, ...)
+          - focus-metavariable: $Q

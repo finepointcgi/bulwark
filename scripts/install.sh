@@ -1,14 +1,14 @@
 #!/bin/sh
-# Installs the latest Bulwark release (or BULWARK_VERSION) for this OS/CPU and verifies its
+# Installs the latest Nightjar release (or NIGHTJAR_VERSION) for this OS/CPU and verifies its
 # SHA-256 against the release's SHA256SUMS before installing.
 #
 #   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | sh
 #
-# Env: BULWARK_REPO (owner/repo), BULWARK_VERSION (e.g. 1.2.0), BULWARK_INSTALL_DIR (default ~/.local/bin)
+# Env: NIGHTJAR_REPO (owner/repo), NIGHTJAR_VERSION (e.g. 1.2.0), NIGHTJAR_INSTALL_DIR (default ~/.local/bin)
 set -eu
 
-repo="${BULWARK_REPO:-OWNER/REPO}"
-dir="${BULWARK_INSTALL_DIR:-$HOME/.local/bin}"
+repo="${NIGHTJAR_REPO:-OWNER/REPO}"
+dir="${NIGHTJAR_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$(uname -s)" in
   Linux) os=linux ;;
@@ -21,13 +21,13 @@ case "$(uname -m)" in
   *) echo "unsupported CPU: $(uname -m)" >&2; exit 1 ;;
 esac
 
-if [ -z "${BULWARK_VERSION:-}" ]; then
-  BULWARK_VERSION=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+if [ -z "${NIGHTJAR_VERSION:-}" ]; then
+  NIGHTJAR_VERSION=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
 fi
-[ -n "$BULWARK_VERSION" ] || { echo "could not determine the latest release of $repo" >&2; exit 1; }
+[ -n "$NIGHTJAR_VERSION" ] || { echo "could not determine the latest release of $repo" >&2; exit 1; }
 
-asset="bulwark-$BULWARK_VERSION-$os-$arch"
-base="https://github.com/$repo/releases/download/v$BULWARK_VERSION"
+asset="nightjar-$NIGHTJAR_VERSION-$os-$arch"
+base="https://github.com/$repo/releases/download/v$NIGHTJAR_VERSION"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -38,6 +38,6 @@ if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$tmp/$asset" |
 [ -n "$expected" ] && [ "$expected" = "$actual" ] || { echo "checksum mismatch for $asset; not installing" >&2; exit 1; }
 
 mkdir -p "$dir"
-install -m 0755 "$tmp/$asset" "$dir/bulwark"
-echo "Installed bulwark $BULWARK_VERSION to $dir/bulwark"
+install -m 0755 "$tmp/$asset" "$dir/nightjar"
+echo "Installed nightjar $NIGHTJAR_VERSION to $dir/nightjar"
 case ":$PATH:" in *":$dir:"*) ;; *) echo "Add $dir to your PATH." ;; esac

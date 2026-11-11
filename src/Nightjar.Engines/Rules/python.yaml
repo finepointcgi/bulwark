@@ -1,0 +1,71 @@
+# Nightjar starter rules for Python. Apache-2.0.
+rules:
+  - id: nightjar.python.subprocess-shell
+    languages: [python]
+    severity: ERROR
+    message: Command run through a shell with a dynamic string. Pass an argument list without shell=True.
+    metadata: { cwe: "CWE-78", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$F(..., shell=True, ...)
+          - pattern: os.system($X)
+          - pattern: os.popen($X, ...)
+      - pattern-not: subprocess.$F("...", ..., shell=True, ...)
+      - pattern-not: os.system("...")
+      - pattern-not: os.popen("...", ...)
+
+  - id: nightjar.python.eval
+    languages: [python]
+    severity: ERROR
+    message: eval / exec run arbitrary code. Use ast.literal_eval for data.
+    metadata: { cwe: "CWE-95", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: nightjar.python.sql-injection
+    languages: [python]
+    severity: ERROR
+    message: SQL built with string formatting. Pass parameters to execute() instead.
+    metadata: { cwe: "CWE-89", category: security }
+    pattern-either:
+      - pattern: $CUR.execute($A + $B, ...)
+      - pattern: $CUR.execute($S % $V, ...)
+      - pattern: $CUR.execute($S.format(...), ...)
+      - pattern: $CUR.execute(f"...", ...)
+
+  - id: nightjar.python.insecure-deserialization
+    languages: [python]
+    severity: ERROR
+    message: pickle and yaml.load on untrusted data allow code execution. Use json or yaml.safe_load.
+    metadata: { cwe: "CWE-502", category: security }
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+      - pattern: yaml.load($X)
+      - pattern: yaml.load($X, Loader=yaml.Loader)
+      - pattern: yaml.load($X, Loader=yaml.UnsafeLoader)
+
+  - id: nightjar.python.tls-validation-disabled
+    languages: [python]
+    severity: ERROR
+    message: TLS certificate validation is disabled.
+    metadata: { cwe: "CWE-295", category: security }
+    pattern-either:
+      - pattern: requests.$F(..., verify=False, ...)
+      - pattern: ssl._create_unverified_context(...)
+
+  - id: nightjar.python.weak-hash
+    languages: [python]
+    severity: WARNING
+    message: MD5 and SHA-1 are broken for security purposes. Use SHA-256 or better.
+    metadata: { cwe: "CWE-328", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+      - pattern-not: hashlib.md5(..., usedforsecurity=False, ...)
+      - pattern-not: hashlib.sha1(..., usedforsecurity=False, ...)

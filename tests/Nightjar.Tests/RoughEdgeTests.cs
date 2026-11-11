@@ -1,0 +1,89 @@
+using Nightjar.Core.Triage;
+using Nightjar.Engines.Execution;
+using Nightjar.Engines.Syft;
+
+namespace Nightjar.Tests;
+
+public class RoughEdgeTests
+{
+    [Theory]
+    [InlineData("src/Nightjar.Engines/Canary/Corpus/", "src/Nightjar.Engines/Canary/Corpus/src/app.py", true)]
+    [InlineData("src/Nightjar.Engines/Canary/Corpus/", "src/Nightjar.Engines/Canary/CanaryCheck.cs", false)]
+    [InlineData("tests/**/Fixtures/", "tests/Nightjar.Tests/Fixtures/zap.json", true)]
+    [InlineData("tests/**/*Tests.cs", "tests/Nightjar.Tests/UpdaterTests.cs", true)]
+    [InlineData("vendor", "lib/vendor/x.go", true)]          // no slash: matches the name anywhere
+    [InlineData("vendor", "lib/vendors/x.go", false)]
+    [InlineData("*.min.js", "web/app.min.js", true)]
+    [InlineData("docs/*.md", "docs/a/b.md", false)]           // * stays within one folder
+    [InlineData("**/generated/**", "src/generated/api.cs", true)]
+    public void Ignore_patterns_follow_gitignore_style(string pattern, string path, bool ignored) =>
+        Assert.Equal(ignored, IgnoreRules.Parse(["# comment", pattern]).IsIgnored(path));
+
+    [Fact]
+    public void Own_package_names_come_from_the_project_manifests()
+    {
+        var root = Directory.CreateTempSubdirectory("nightjar-own-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "package.json"), """{"name":"@acme/shop","version":"1.0.0"}""");
+            File.WriteAllText(Path.Combine(root, "go.mod"), "module github.com/acme/api\n\ngo 1.23\n");
+            File.WriteAllText(Path.Combine(root, "pyproject.toml"), "[project]\nname = \"acme-tools\"\nversion = \"1\"\n");
+            File.WriteAllText(Path.Combine(root, "Shop.Api.csproj"), "<Project />");
+
+            var names = OwnPackages.Find(root, ["package.json", "go.mod", "pyproject.toml", "Shop.Api.csproj"]);
+
+            Assert.Equal(["@acme/shop", "Shop.Api", "acme-tools", "github.com/acme/api"], names.Order(StringComparer.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Syft_paths_keep_a_project_folder_named_src()
+    {
+        const string sbom = """
+            {"components":[{"type":"library","name":"left-pad","version":"1.0.0","purl":"pkg:npm/left-pad@1.0.0",
+              "properties":[{"name":"syft:location:0:path","value":"/src/web/package-lock.json"}]}]}
+            """;
+
+        var component = Assert.Single(CycloneDxParser.Parse(sbom, "/Users/me/app").Components);
+
+        Assert.Equal(["src/web/package-lock.json"], component.FoundIn);
+    }
+
+    [Fact]
+    public void Unknown_licenses_are_only_flagged_where_metadata_normally_exists()
+    {
+        var sbom = new Nightjar.Core.Sbom.SoftwareBillOfMaterials(
+        [
+            new(new Nightjar.Core.Findings.PackageRef("left-pad", "1.0.0", "npm"), [], []),
+            new(new Nightjar.Core.Findings.PackageRef("Newtonsoft.Json", "13.0.3", "NuGet"), [], []),
+            new(new Nightjar.Core.Findings.PackageRef("actions/checkout", "v4", "GitHub Actions"), [], []),
+        ], "{}");
+
+        var findings = new Nightjar.Core.Policy.LicensePolicy().Evaluate(sbom).ToList();
+
+        Assert.Equal("left-pad", Assert.Single(findings).Package!.Name);
+    }
+
+    [Fact]
+    public void Host_user_is_uid_and_gid_on_unix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Assert.Matches(@"^\d+:\d+$", ToolRunner.HostUser());
+    }
+
+    [Fact]
+    public void Self_built_engine_dockerfiles_are_embedded()
+    {
+        Assert.Contains("opengrep", EngineImages.EmbeddedEngines());
+        Assert.Contains("cppcheck", EngineImages.EmbeddedEngines());
+        Assert.Contains("lizard", EngineImages.EmbeddedEngines());
+    }
+}

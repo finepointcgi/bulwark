@@ -1,0 +1,39 @@
+# Nightjar starter rules for Rust. Apache-2.0.
+rules:
+  - id: nightjar.rust.command-shell
+    languages: [rust]
+    severity: ERROR
+    message: Command run through a shell with a dynamic string. Use Command::new(program).arg(...) with separate arguments.
+    metadata: { cwe: "CWE-78", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: Command::new("sh").arg("-c").arg($X)
+          - pattern: Command::new("bash").arg("-c").arg($X)
+      - pattern-not: Command::new("sh").arg("-c").arg("...")
+      - pattern-not: Command::new("bash").arg("-c").arg("...")
+
+  - id: nightjar.rust.unsafe-block
+    languages: [rust]
+    severity: WARNING
+    message: unsafe block. Make sure the invariants are documented and the block is as small as possible.
+    metadata: { cwe: "CWE-119", category: security }
+    pattern: unsafe { ... }
+
+  - id: nightjar.rust.tls-verification-disabled
+    languages: [rust]
+    severity: ERROR
+    message: TLS certificate verification is disabled.
+    metadata: { cwe: "CWE-295", category: security }
+    pattern-either:
+      - pattern: $B.danger_accept_invalid_certs(true)
+      - pattern: $B.danger_accept_invalid_hostnames(true)
+
+  - id: nightjar.rust.sql-format
+    languages: [rust]
+    severity: ERROR
+    message: SQL built with format!(). Use bind parameters.
+    metadata: { cwe: "CWE-89", category: security }
+    pattern-either:
+      - pattern: sqlx::query(&format!(...))
+      - pattern: $C.execute(&format!(...), ...)
+      - pattern: $C.query(&format!(...), ...)

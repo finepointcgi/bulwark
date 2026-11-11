@@ -1,0 +1,73 @@
+# Nightjar starter rules for Java and Go. Apache-2.0.
+rules:
+  - id: nightjar.java.sql-injection
+    languages: [java]
+    severity: ERROR
+    message: SQL built by string concatenation. Use PreparedStatement with parameters.
+    metadata: { cwe: "CWE-89", category: security }
+    pattern-either:
+      - pattern: $S.executeQuery($A + $B)
+      - pattern: $S.executeUpdate($A + $B)
+      - pattern: $S.execute($A + $B)
+      - pattern: $C.prepareStatement($A + $B, ...)
+
+  - id: nightjar.java.command-injection
+    languages: [java]
+    severity: ERROR
+    message: Runtime.exec with a concatenated command string. Use ProcessBuilder with separate arguments.
+    metadata: { cwe: "CWE-78", category: security }
+    pattern-either:
+      - pattern: Runtime.getRuntime().exec($A + $B, ...)
+      - pattern: new ProcessBuilder("sh", "-c", $X, ...)
+      - pattern: new ProcessBuilder("bash", "-c", $X, ...)
+
+  - id: nightjar.java.insecure-deserialization
+    languages: [java]
+    severity: WARNING
+    message: ObjectInputStream.readObject on untrusted data allows code execution. Use an allow-list filter or a data format like JSON.
+    metadata: { cwe: "CWE-502", category: security }
+    pattern: (ObjectInputStream $O).readObject()
+
+  - id: nightjar.java.weak-hash
+    languages: [java]
+    severity: WARNING
+    message: MD5 and SHA-1 are broken for security purposes. Use SHA-256 or better.
+    metadata: { cwe: "CWE-328", category: security }
+    pattern-either:
+      - pattern: MessageDigest.getInstance("MD5")
+      - pattern: MessageDigest.getInstance("SHA-1")
+      - pattern: MessageDigest.getInstance("SHA1")
+
+  - id: nightjar.go.command-injection
+    languages: [go]
+    severity: ERROR
+    message: Command run through a shell with a dynamic string. Call the program directly with separate arguments.
+    metadata: { cwe: "CWE-78", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: exec.Command("sh", "-c", $X)
+          - pattern: exec.Command("bash", "-c", $X)
+          - pattern: exec.CommandContext($CTX, "sh", "-c", $X)
+          - pattern: exec.CommandContext($CTX, "bash", "-c", $X)
+      - pattern-not: exec.Command("sh", "-c", "...")
+      - pattern-not: exec.Command("bash", "-c", "...")
+
+  - id: nightjar.go.sql-injection
+    languages: [go]
+    severity: ERROR
+    message: SQL built with fmt.Sprintf or concatenation. Use query parameters.
+    metadata: { cwe: "CWE-89", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$Q(fmt.Sprintf(...), ...)
+          - pattern: $DB.$Q($A + $B, ...)
+      - metavariable-regex:
+          metavariable: $Q
+          regex: ^(Query|QueryRow|Exec)$
+
+  - id: nightjar.go.tls-validation-disabled
+    languages: [go]
+    severity: ERROR
+    message: TLS certificate validation is disabled.
+    metadata: { cwe: "CWE-295", category: security }
+    pattern: "tls.Config{..., InsecureSkipVerify: true, ...}"

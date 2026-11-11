@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Nightjar.Ai/Nightjar.Ai.csproj" />
+    <Project Path="src/Nightjar.Cli/Nightjar.Cli.csproj" />
+    <Project Path="src/Nightjar.Core/Nightjar.Core.csproj" />
+    <Project Path="src/Nightjar.Engines/Nightjar.Engines.csproj" />
+    <Project Path="src/Nightjar.Web/Nightjar.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nightjar.Tests/Nightjar.Tests.csproj" />
+  </Folder>
+</Solution>

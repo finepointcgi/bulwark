@@ -1,11 +1,11 @@
-# Bulwark
+# Nightjar
 
 Open-source, self-updating application security and code quality scanning in one tool:
 dependency vulnerabilities and SBOMs (SCA), licenses, SAST with taint tracking, C/C++ defects,
 secrets (including git history), infrastructure-as-code, container base images, complexity,
 duplication and coverage. An open alternative to Black Duck, Coverity, SonarQube and Fortify.
 
-Bulwark doesn't reinvent scanners. It runs proven open-source engines at **signed, pinned
+Nightjar doesn't reinvent scanners. It runs proven open-source engines at **signed, pinned
 versions**, normalizes their output into one finding model, removes duplicates across engines,
 and gives you one report, one quality gate and one dashboard. It then keeps itself current
 and keeps watching what you shipped.
@@ -14,27 +14,27 @@ and keeps watching what you shipped.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | sh
-bulwark scan path/to/project
+nightjar scan path/to/project
 ```
 
-Or from source: `dotnet run --project src/Bulwark.Cli -- scan path/to/project`. Docker is
+Or from source: `dotnet run --project src/Nightjar.Cli -- scan path/to/project`. Docker is
 required: engines run from their pinned container images (or from a local install on `PATH`;
-`--container` forces the pinned image). Images Bulwark builds itself are built automatically
+`--container` forces the pinned image). Images Nightjar builds itself are built automatically
 the first time they're needed.
 
-The dashboard (`dotnet run --project src/Bulwark.Web`) shows every scanned project, lets you
+The dashboard (`dotnet run --project src/Nightjar.Web`) shows every scanned project, lets you
 triage findings, and re-checks dependencies for new advisories every day while it runs.
 
 ```
-bulwark scan [path] [--format table|json|sarif|markdown|codeclimate] [--output file]
+nightjar scan [path] [--format table|json|sarif|markdown|codeclimate] [--output file]
              [--fail-on critical|high|medium|low|none] [--since <git-ref> | --baseline <report.json|last>]
              [--min-coverage 80] [--max-duplication 5] [--max-complexity 15]
              [--image ref,ref] [--rules dir] [--history full|off|<range>] [--engines a,b] [--container]
              [--sarif-output f] [--summary-output f] [--codeclimate-output f] [--no-update]
-bulwark triage <id> false-positive|accepted-risk|confirmed|fixed|reset --reason "..." [--expires date] [--shared]
-bulwark monitor [--webhook url] [--fail-on high]     re-check saved SBOMs for new advisories
-bulwark fix [path] [--dry-run] [--pr]                upgrade vulnerable dependencies
-bulwark update | canary | self-update | engines [watch]
+nightjar triage <id> false-positive|accepted-risk|confirmed|fixed|reset --reason "..." [--expires date] [--shared]
+nightjar monitor [--webhook url] [--fail-on high]     re-check saved SBOMs for new advisories
+nightjar fix [path] [--dry-run] [--pr]                upgrade vulnerable dependencies
+nightjar update | canary | self-update | engines [watch]
 ```
 
 Exit codes: `0` passed, `1` a gate failed, `2` error.
@@ -43,19 +43,19 @@ Exit codes: `0` passed, `1` a gate failed, `2` error.
 
 | Project | Role |
 |---|---|
-| `Bulwark.Core` | Finding model, fingerprints, merging, policy, triage, gates, monitoring, fix planning, signed-manifest updater |
-| `Bulwark.Engines` | One adapter per engine (`IEngine`), `ToolRunner` (local binary or pinned container), the rule pack and the canary corpus |
-| `Bulwark.Ai` | LLM clients (Claude, Ollama) for the AI pen-test review |
-| `Bulwark.Cli` | `bulwark` command |
-| `Bulwark.Web` | Blazor dashboard over saved reports, with triage and daily advisory monitoring |
+| `Nightjar.Core` | Finding model, fingerprints, merging, policy, triage, gates, monitoring, fix planning, signed-manifest updater |
+| `Nightjar.Engines` | One adapter per engine (`IEngine`), `ToolRunner` (local binary or pinned container), the rule pack and the canary corpus |
+| `Nightjar.Ai` | LLM clients (Claude, Ollama) for the AI pen-test review |
+| `Nightjar.Cli` | `nightjar` command |
+| `Nightjar.Web` | Blazor dashboard over saved reports, with triage and daily advisory monitoring |
 
 **Fingerprints** are stable across scans and engines: vulnerabilities key on package and
 canonical advisory id (CVE preferred), and code findings key on rule, file and normalized
 snippet rather than line number. So triage decisions stick, and the same CVE reported by two
 engines appears once.
 
-Reports, SBOMs, triage, caches and the installed manifest live in `~/.bulwark` (override
-with `BULWARK_HOME`), never inside the scanned repo.
+Reports, SBOMs, triage, caches and the installed manifest live in `~/.nightjar` (override
+with `NIGHTJAR_HOME`), never inside the scanned repo.
 
 ## Staying current automatically
 
@@ -66,65 +66,65 @@ Every engine version is declared once, in [`engines/engines.json`](engines/engin
   which gives the community time to catch broken or compromised releases. It also rewrites
   Dockerfile pins (release hashes), rebuilds the engines and runs the canary check, then opens
   a PR.
-- **Base images too.** The same PR updates the `FROM` lines of Bulwark's own engine images:
+- **Base images too.** The same PR updates the `FROM` lines of Nightjar's own engine images:
   - Versioned tags move to the newest patch release of the same minor version and variant
     (`alpine:3.24.2` → `3.24.4`), so security fixes land without surprise major upgrades.
   - Every tag is pinned by digest, so a rebuilt tag such as `bookworm-slim` only changes
     through a reviewed PR.
   - Base images use a shorter 2-day maturity window, because Docker's official images are
     rebuilt often for security fixes (`--base-min-age-days`).
-  - Run it yourself with `bulwark engines watch --only base [--write]`.
+  - Run it yourself with `nightjar engines watch --only base [--write]`.
 - **No Docker Hub pull limits.** Base images are pulled through `mirror.gcr.io`, Google's
   Docker Hub cache. If an engine image pull from Docker Hub is still rate-limited (HTTP 429),
-  Bulwark retries through the mirror; with digest pins the content is identical. The watcher
+  Nightjar retries through the mirror; with digest pins the content is identical. The watcher
   reads tag lists from Docker Hub's catalog API and digests from the mirror. Neither counts
   toward pull limits, and no credentials are sent to either.
 - **Signed manifest** ([`engines-release.yml`](.github/workflows/engines-release.yml)). On
   merge, the workflow builds the self-built engine images for amd64 and arm64 and resolves every
   image to a digest. It runs the canary check against exactly those digests, then signs the
   manifest (ECDSA P-256, compatible with `cosign sign-blob --key`) and publishes it.
-- **Clients update themselves.** `bulwark scan` checks for a newer manifest once a day. The
+- **Clients update themselves.** `nightjar scan` checks for a newer manifest once a day. The
   updater rejects:
   - unsigned or wrongly signed manifests
   - engines without image digests
   - unknown schema versions
   - anything older than what is installed (rollback protection)
-- **Canary check, then rollback.** After installing, Bulwark scans a built-in vulnerable corpus.
+- **Canary check, then rollback.** After installing, Nightjar scans a built-in vulnerable corpus.
   If any engine no longer finds what it must, the previous manifest is restored and the bad one
-  is skipped from then on. You can run the check yourself with `bulwark canary`.
-- **Binary updates.** The signed manifest also names the latest Bulwark release with a SHA-256
-  for each platform. `bulwark self-update` installs it only if the hash matches.
+  is skipped from then on. You can run the check yourself with `nightjar canary`.
+- **Binary updates.** The signed manifest also names the latest Nightjar release with a SHA-256
+  for each platform. `nightjar self-update` installs it only if the hash matches.
 
-Opt out of automatic checks with `BULWARK_AUTO_UPDATE=0` or `--no-update`.
+Opt out of automatic checks with `NIGHTJAR_AUTO_UPDATE=0` or `--no-update`.
 
 **Setting it up for your fork:**
 
-1. Run `bulwark manifest keygen keys/`, commit `keys/bulwark-signing.pub`, and store the private
-   key as the repository secret `BULWARK_SIGNING_KEY`.
-2. Make the GHCR packages under `bulwark-engines` public after the first run, so clients can pull
+1. Run `nightjar manifest keygen keys/`, commit `keys/nightjar-signing.pub`, and store the private
+   key as the repository secret `NIGHTJAR_SIGNING_KEY`.
+2. Make the GHCR packages under `nightjar-engines` public after the first run, so clients can pull
    them.
-3. Replace `OWNER/REPO` in `scripts/install.sh` and `ci/gitlab/bulwark.gitlab-ci.yml`.
+3. Replace `OWNER/REPO` in `scripts/install.sh` and `ci/gitlab/nightjar.gitlab-ci.yml`.
 4. Push a `v*` tag. The release workflow builds the binaries and refreshes the manifest, and
    release binaries then find the manifest and the public key on their own.
 
 ## Handling findings
 
 - **Triage that sticks.** Mark a finding as a false positive or accepted risk (with a reason
-  and an optional expiry date) in the dashboard or with `bulwark triage`. Decisions are keyed by
+  and an optional expiry date) in the dashboard or with `nightjar triage`. Decisions are keyed by
   fingerprint, so they survive rescans and code moves. With `--shared` they're written to
-  `.bulwark/triage.json` in the repository, where they're reviewed like code and CI sees them
+  `.nightjar/triage.json` in the repository, where they're reviewed like code and CI sees them
   too.
-- **Ignored paths.** `.bulwark/ignore` uses gitignore-style patterns for fixtures, vendored code
+- **Ignored paths.** `.nightjar/ignore` uses gitignore-style patterns for fixtures, vendored code
   and deliberately vulnerable samples.
 - **Gate on new code only.** `--since origin/main` fails only on findings on lines the change
   touched, or on dependency versions it introduced. `--baseline last` (or a saved report) fails
   only on findings not seen before. Existing debt stays visible but doesn't block merges.
-- **Continuous monitoring.** Every scan saves the SBOM. `bulwark monitor` (or the running
+- **Continuous monitoring.** Every scan saves the SBOM. `nightjar monitor` (or the running
   dashboard, daily) asks OSV.dev about every saved dependency. When a new advisory affects
   something you already ship, it's added to the report and posted to `--webhook` /
-  `BULWARK_WEBHOOK` (Slack, Teams, Discord, Mattermost). Only package names and versions are
+  `NIGHTJAR_WEBHOOK` (Slack, Teams, Discord, Mattermost). Only package names and versions are
   sent, as with OSV-Scanner.
-- **Automatic fixes.** `bulwark fix` upgrades each vulnerable dependency to the smallest version
+- **Automatic fixes.** `nightjar fix` upgrades each vulnerable dependency to the smallest version
   that fixes all of its advisories. It first checks that version against OSV and moves higher if
   the target has advisories of its own. It supports npm (lockfile-only, scripts disabled,
   `overrides` for transitive dependencies), NuGet, pip `requirements*.txt` pins and Go modules.
@@ -133,9 +133,9 @@ Opt out of automatic checks with `BULWARK_AUTO_UPDATE=0` or `--no-update`.
 ## Prioritizing, exporting and catching problems early
 
 - **Reachability.** Dependency vulnerabilities are marked when no first-party file imports the package (npm, PyPI, Go, NuGet). It is shown as `[not imported directly]` and in the dashboard. It is a hint, not proof: the package may still arrive through another dependency, so `--ignore-unimported` only removes those findings from the *gate*, never from reports.
-- **SBOM and VEX.** `bulwark sbom [path] [--format cyclonedx|spdx] [--vex] [--output file]`. With `--vex`, CycloneDX gets a `vulnerabilities` section whose states come from your triage decisions (false positive → `false_positive`, accepted risk → `exploitable` / `will_not_fix`, fixed → `resolved`, otherwise `in_triage`).
-- **Trends.** Every scan appends a point to a per-project history (`~/.bulwark/reports/history/*.jsonl`, plain text so there is no native database to ship). The dashboard shows open findings over the last scans and what is new or resolved since the previous one.
-- **Before the commit.** `bulwark hook install` adds a git pre-commit hook that scans the *staged* content for secrets and blocks the commit (`--no-verify` bypasses it). `.pre-commit-hooks.yaml` is provided for the pre-commit framework. `editors/vscode` is a small extension that shows scan results as editor diagnostics.
+- **SBOM and VEX.** `nightjar sbom [path] [--format cyclonedx|spdx] [--vex] [--output file]`. With `--vex`, CycloneDX gets a `vulnerabilities` section whose states come from your triage decisions (false positive → `false_positive`, accepted risk → `exploitable` / `will_not_fix`, fixed → `resolved`, otherwise `in_triage`).
+- **Trends.** Every scan appends a point to a per-project history (`~/.nightjar/reports/history/*.jsonl`, plain text so there is no native database to ship). The dashboard shows open findings over the last scans and what is new or resolved since the previous one.
+- **Before the commit.** `nightjar hook install` adds a git pre-commit hook that scans the *staged* content for secrets and blocks the commit (`--no-verify` bypasses it). `.pre-commit-hooks.yaml` is provided for the pre-commit framework. `editors/vscode` is a small extension that shows scan results as editor diagnostics.
 - **More taint rules.** Spring (`@RequestParam` and friends), ASP.NET Core action parameters, PHP and Rails join the existing Python, JavaScript, C#, Java and Go flows.
 
 ## CI
@@ -158,20 +158,20 @@ On pull requests the action:
 - uploads SARIF, so findings appear inline in the diff (code scanning)
 - scans only the PR's commits for secrets
 
-**GitLab**: include [`ci/gitlab/bulwark.gitlab-ci.yml`](ci/gitlab/bulwark.gitlab-ci.yml).
+**GitLab**: include [`ci/gitlab/nightjar.gitlab-ci.yml`](ci/gitlab/nightjar.gitlab-ci.yml).
 Findings show in the merge request widget and diff through the code quality report.
 
 ## AI pen-test review
 
 ```bash
-bulwark scan . --ai claude                     # Claude (ANTHROPIC_API_KEY or `ant auth login`)
-bulwark scan . --ai claude-code                # Claude via your Claude Code login (`claude -p`); no API key
-bulwark scan . --ai ollama --ai-model qwen3-coder   # local model; no code leaves the machine
+nightjar scan . --ai claude                     # Claude (ANTHROPIC_API_KEY or `ant auth login`)
+nightjar scan . --ai claude-code                # Claude via your Claude Code login (`claude -p`); no API key
+nightjar scan . --ai ollama --ai-model qwen3-coder   # local model; no code leaves the machine
          [--ai-min-severity medium] [--ai-max 25]
 ```
 
 Scanners report that a vulnerable thing is *present*. A pen tester asks whether an attacker can
-*reach* it. With `--ai`, Bulwark gives each finding at or above `--ai-min-severity` (most
+*reach* it. With `--ai`, Nightjar gives each finding at or above `--ai-min-severity` (most
 severe first, up to `--ai-max`) to a model with the evidence a tester would look at: the flagged
 code, and for dependency CVEs, every place the project imports or calls the package. The model
 returns a verdict (`likely`, `possible`, `not_exploitable` or `unknown`), its confidence, its
@@ -194,25 +194,25 @@ Guardrails:
 - **Data locality is explicit.** `--ai claude` and `--ai claude-code` print a notice that excerpts leave the
   machine. `--ai ollama` (honours `OLLAMA_HOST`) keeps everything local.
 
-Code: `Bulwark.Core/Ai` (provider-neutral reviewer and evidence collection) and `Bulwark.Ai`
+Code: `Nightjar.Core/Ai` (provider-neutral reviewer and evidence collection) and `Nightjar.Ai`
 (the Claude API, Claude Code and Ollama clients behind `ILlmClient`).
 
 ## Active testing (AI-planned DAST)
 
 ```bash
-bulwark pentest init                                  # writes bulwark-scope.json to fill in
-docker build -t bulwark-engines/nuclei:v3.11.1 engines/nuclei   # once: nuclei + pinned templates
-bulwark pentest https://staging.example.com --scope bulwark-scope.json --i-am-authorized \
+nightjar pentest init                                  # writes nightjar-scope.json to fill in
+docker build -t nightjar-engines/nuclei:v3.11.1 engines/nuclei   # once: nuclei + pinned templates
+nightjar pentest https://staging.example.com --scope nightjar-scope.json --i-am-authorized \
         [--ai claude|claude-code|ollama] [--source path/to/repo] [--openapi openapi.json]
 ```
 
-The static review predicts what is exploitable. `bulwark pentest` tests a **running** instance
+The static review predicts what is exploitable. `nightjar pentest` tests a **running** instance
 to confirm it:
 
 1. **Discovery.** A ZAP baseline scan spiders the target and runs passive checks (headers,
    cookies, information leaks). It sends no attack payloads.
 2. **Planning.** With `--ai`, a model reads the discovered URLs and, with `--source`, the
-   findings that `bulwark scan --ai` marked `likely` or `possible`. It proposes nuclei template
+   findings that `nightjar scan --ai` marked `likely` or `possible`. It proposes nuclei template
    tags, paths to focus on, and which static findings each check should confirm. Without
    `--ai`, a default plan runs (`exposure`, `misconfig`). The planner can add `cve`, `tech`
    and others when discovery shows specific software.
@@ -230,7 +230,7 @@ to confirm it:
    bugs like SQL injection usually come back `inconclusive`, with a note on the manual test
    that would settle them.
 
-**Authenticated scans.** Add `"auth": { "header": "Authorization", "valueFromEnv": "BULWARK_AUTH" }`
+**Authenticated scans.** Add `"auth": { "header": "Authorization", "valueFromEnv": "NIGHTJAR_AUTH" }`
 (or `"header": "Cookie"`) to the scope and export the full header value in that variable. The
 secret never goes in the scope file, and an inline value is rejected. ZAP gets it through its
 `ZAP_AUTH_HEADER*` variables and nuclei through a secrets file restricted to the target host.
@@ -248,9 +248,9 @@ the target's page.
   contract reference, and an expiry, plus `--i-am-authorized`. An expired scope, a placeholder,
   an unknown field (a typo like `exlude`), a wildcard host, or a target outside the scope all
   stop the run before any request.
-- **Every engine request goes through Bulwark's scope proxy.** It checks method, scheme, host,
+- **Every engine request goes through Nightjar's scope proxy.** It checks method, scheme, host,
   port and the path after resolving `..` and `%2e%2e`. It rate-limits to `maxRequestsPerSecond`
-  and logs every request, allowed or blocked, to `~/.bulwark/pentests/*.requests.jsonl`. HTTPS
+  and logs every request, allowed or blocked, to `~/.nightjar/pentests/*.requests.jsonl`. HTTPS
   tunnels are allowed only to `https` targets and are checked by host and port, since the proxy
   doesn't decrypt TLS. Path rules for HTTPS rely on the engines' own targeting.
 - **Read-only by default.** Only GET, HEAD and OPTIONS are allowed until the scope adds more.
@@ -273,13 +273,13 @@ The proxy binds to loopback (or, on Linux, the Docker bridge gateway), never `0.
 |---|---|---|
 | Syft | SBOM (CycloneDX) and licenses | Apache-2.0 |
 | OSV-Scanner | Known vulnerabilities in dependencies | Apache-2.0 |
-| Opengrep | SAST with Bulwark's rule pack, including taint tracking (C#, JS/TS, Python, Java, Go, C/C++) | LGPL-2.1 |
+| Opengrep | SAST with Nightjar's rule pack, including taint tracking (C#, JS/TS, Python, Java, Go, C/C++) | LGPL-2.1 |
 | cppcheck | C/C++ defects: out-of-bounds, use-after-free, double free, uninitialized data, leaks | GPL-3.0 (run as a separate process only) |
 | gitleaks | Secrets in current files and git history | MIT |
 | Trivy | IaC (Terraform, CloudFormation, Kubernetes, Helm, Dockerfile, ARM, Ansible) and container base images | Apache-2.0 |
 | lizard | Cyclomatic complexity and duplicated code (30+ languages) | MIT |
-| ZAP (baseline) | DAST: discovery and passive checks (`bulwark pentest`) | Apache-2.0 |
-| nuclei | DAST: targeted template checks (`bulwark pentest`) | MIT |
+| ZAP (baseline) | DAST: discovery and passive checks (`nightjar pentest`) | Apache-2.0 |
+| nuclei | DAST: targeted template checks (`nightjar pentest`) | MIT |
 
 Adding an engine means one class implementing `IEngine` and one entry in `engines/engines.json`.
 Any engine that can output SARIF can use the shared `SarifParser`. Engines without an official
@@ -288,12 +288,12 @@ verifies the pinned release by SHA-256.
 
 ### SAST rules
 
-Bulwark ships its own Apache-2.0 rule pack in
-[`src/Bulwark.Engines/Rules`](src/Bulwark.Engines/Rules), embedded in the binary:
+Nightjar ships its own Apache-2.0 rule pack in
+[`src/Nightjar.Engines/Rules`](src/Nightjar.Engines/Rules), embedded in the binary:
 
 - **Pattern rules** for SQL and command injection, eval, insecure deserialization, disabled TLS
   validation, XSS sinks, weak hashes, and unsafe C string/format/command APIs.
-- **Taint rules** ([`taint.yaml`](src/Bulwark.Engines/Rules/taint.yaml)). These follow request
+- **Taint rules** ([`taint.yaml`](src/Nightjar.Engines/Rules/taint.yaml)). These follow request
   data in Flask/Django, Express, ASP.NET Core, servlets and net/http to SQL, shell, eval, file
   paths and HTML responses. Sanitizers such as `int()` and `parseInt` end the flow, so a hit is a
   real data path.
@@ -310,11 +310,11 @@ Medium. Opengrep's C rules add `strcpy`/`sprintf`/`gets`, non-constant format st
 
 ### Container images
 
-Bulwark finds the final-stage base image of every Dockerfile (resolving `ARG` defaults and
+Nightjar finds the final-stage base image of every Dockerfile (resolving `ARG` defaults and
 skipping build stages and `scratch`) and scans it with Trivy, along with any image passed
 with `--image`. Only vulnerabilities with a fix are reported unless you pass
 `--image-include-unfixed`. Images are pulled from their registry, and Trivy's vulnerability
-database is cached in `~/.bulwark/cache`.
+database is cached in `~/.nightjar/cache`.
 
 ### Code quality
 
@@ -336,10 +336,10 @@ results change only when the manifest moves Trivy forward, and the scan works of
 
 ### Secrets
 
-gitleaks' raw report contains the secrets, so Bulwark parses it and deletes it right away.
+gitleaks' raw report contains the secrets, so Nightjar parses it and deletes it right away.
 Findings keep only a hash of the value (for a stable id) and the first 4 characters (to
 identify the key type). The value itself is never written to reports, SARIF or the dashboard.
-When the scan root is a git repository, Bulwark also scans its **full history** by default. A
+When the scan root is a git repository, Nightjar also scans its **full history** by default. A
 secret found in both the current files and history becomes one finding noting the commit that
 first added it. A secret that was deleted but still lives in history gets its own "Secret in git
 history" finding, because anyone with a clone can still read it. Commit author names and emails
@@ -359,19 +359,19 @@ quality metrics. Next:
 1. Deeper interprocedural C/C++/Java analysis (Infer, Clang Static Analyzer with a compile
    database).
 2. Reachability for dependency CVEs: only flag vulnerable functions the code actually calls.
-3. Base-image upgrade suggestions (newer tag or digest) in `bulwark fix`.
+3. Base-image upgrade suggestions (newer tag or digest) in `nightjar fix`.
 4. Organization view in the dashboard: many repositories, trends over time, authentication.
 5. More taint sources and sinks (Spring, Django ORM raw queries, Go frameworks) and more languages
    (Ruby, PHP, Kotlin).
 6. Keyless (Sigstore) verification of upstream engine releases in addition to hash pinning.
 7. ~~Optional LLM triage (local via Ollama, or bring your own key).~~ Done: `--ai` exploitability review.
-8. ~~AI-driven active pen testing (DAST)~~ Done: `bulwark pentest`, with header-based
+8. ~~AI-driven active pen testing (DAST)~~ Done: `nightjar pentest`, with header-based
    authenticated scans, OpenAPI-driven API scans and AI correlation of dynamic results to static
    findings. Next: scripted login flows (form and OAuth) for apps without a static token, and
    ZAP active scans aimed at the planner's focus paths.
 
 ## License
 
-Bulwark is licensed under [Apache-2.0](LICENSE). Each engine keeps its own license (see the
-engines table). Bulwark only runs engines as separate processes or containers and never links
-them, so GPL engines like cppcheck don't affect Bulwark's license.
+Nightjar is licensed under [Apache-2.0](LICENSE). Each engine keeps its own license (see the
+engines table). Nightjar only runs engines as separate processes or containers and never links
+them, so GPL engines like cppcheck don't affect Nightjar's license.

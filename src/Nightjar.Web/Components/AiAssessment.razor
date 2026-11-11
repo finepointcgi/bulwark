@@ -1,0 +1,62 @@
+@using Nightjar.Core.Ai
+
+@* AI pen-test verdict for one finding: a badge, with the reasoning folded underneath. *@
+@if (Assessment is null)
+{
+    <span class="muted">—</span>
+}
+else
+{
+    <details class="ai">
+        <summary>
+            <span class="ai-badge ai-@Assessment.Verdict">@Label(Assessment.Verdict)</span>
+            <span class="muted">@Assessment.Confidence.ToString("P0")</span>
+        </summary>
+        <div class="ai-body">
+            <p>@Assessment.Reasoning</p>
+            @if (Assessment.AttackPath.Count > 0)
+            {
+                <h4>Attack path</h4>
+                <ol>
+                    @foreach (var step in Assessment.AttackPath)
+                    {
+                        <li>@step</li>
+                    }
+                </ol>
+            }
+            @if (Assessment.VerificationSteps is { } verify)
+            {
+                <h4>How to verify</h4>
+                <p>@verify</p>
+            }
+            @if (Assessment.Remediation is { } fix)
+            {
+                <h4>Fix</h4>
+                <p>@fix</p>
+            }
+            <p class="muted">
+                @Assessment.Model
+                @if (Assessment.EvidenceFiles.Count > 0)
+                {
+                    <text> · evidence: </text>
+                    @foreach (var file in Assessment.EvidenceFiles)
+                    {
+                        <code>@file</code><text> </text>
+                    }
+                }
+            </p>
+        </div>
+    </details>
+}
+
+@code {
+    [Parameter] public ExploitabilityAssessment? Assessment { get; set; }
+
+    public static string Label(Exploitability verdict) => verdict switch
+    {
+        Exploitability.Likely => "Likely exploitable",
+        Exploitability.Possible => "Possible",
+        Exploitability.NotExploitable => "Not exploitable",
+        _ => "Unknown",
+    };
+}

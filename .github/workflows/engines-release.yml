@@ -1,20 +1,20 @@
 name: engines-release
 
-# Publishes the signed engine manifest that every Bulwark install auto-updates from:
+# Publishes the signed engine manifest that every Nightjar install auto-updates from:
 #   https://github.com/<owner>/<repo>/releases/download/engines-stable/manifest.json
 #
 # 1. builds the self-built engine images (linux/amd64 + linux/arm64) and pushes them to GHCR
 # 2. resolves every engine image to an immutable digest
 # 3. runs the canary against exactly those digests
-# 4. generates the manifest (including the latest Bulwark binaries), signs it, uploads it
+# 4. generates the manifest (including the latest Nightjar binaries), signs it, uploads it
 #
-# Needs the repository secret BULWARK_SIGNING_KEY (from `bulwark manifest keygen`); the matching
-# public key is committed at keys/bulwark-signing.pub and compiled into release binaries.
+# Needs the repository secret NIGHTJAR_SIGNING_KEY (from `nightjar manifest keygen`); the matching
+# public key is committed at keys/nightjar-signing.pub and compiled into release binaries.
 
 on:
   push:
     branches: [main]
-    paths: ["engines/**", "src/Bulwark.Engines/Rules/**"]
+    paths: ["engines/**", "src/Nightjar.Engines/Rules/**"]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/bulwark-engines
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/nightjar-engines
 
 jobs:
   build-images:
@@ -93,41 +93,41 @@ jobs:
           done
           cat digests.txt
 
-      - name: Fetch latest Bulwark release binaries
+      - name: Fetch latest Nightjar release binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag=$(gh release list --exclude-drafts --exclude-pre-releases --json tagName --jq '[.[] | select(.tagName | startswith("v"))][0].tagName' || true)
           if [ -n "$tag" ]; then
-            gh release download "$tag" --pattern bulwark-assets.txt --clobber && echo "BULWARK_VERSION=${tag#v}" >> "$GITHUB_ENV"
+            gh release download "$tag" --pattern nightjar-assets.txt --clobber && echo "NIGHTJAR_VERSION=${tag#v}" >> "$GITHUB_ENV"
           fi
 
       - name: Generate manifest
         run: |
           extra=""
-          [ -n "${BULWARK_VERSION:-}" ] && extra="--bulwark-version $BULWARK_VERSION --bulwark-assets bulwark-assets.txt"
+          [ -n "${NIGHTJAR_VERSION:-}" ] && extra="--nightjar-version $NIGHTJAR_VERSION --nightjar-assets nightjar-assets.txt"
           prefix=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
-          dotnet run --project src/Bulwark.Cli --configuration Release -- manifest generate \
+          dotnet run --project src/Nightjar.Cli --configuration Release -- manifest generate \
             --engines engines/engines.json --digests digests.txt --image-prefix "$prefix" \
             --channel stable $extra --out manifest.json
 
       - name: Canary against the exact digests being published
-        run: dotnet run --project src/Bulwark.Cli --configuration Release --no-build -- canary --container --manifest manifest.json
+        run: dotnet run --project src/Nightjar.Cli --configuration Release --no-build -- canary --container --manifest manifest.json
 
       - name: Sign
         env:
-          SIGNING_KEY: ${{ secrets.BULWARK_SIGNING_KEY }}
+          SIGNING_KEY: ${{ secrets.NIGHTJAR_SIGNING_KEY }}
         run: |
           umask 077
           printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.key"
-          dotnet run --project src/Bulwark.Cli --configuration Release --no-build -- manifest sign manifest.json --private-key "$RUNNER_TEMP/signing.key"
+          dotnet run --project src/Nightjar.Cli --configuration Release --no-build -- manifest sign manifest.json --private-key "$RUNNER_TEMP/signing.key"
           rm -f "$RUNNER_TEMP/signing.key"
-          openssl dgst -sha256 -verify keys/bulwark-signing.pub -signature <(base64 -d manifest.json.sig) manifest.json
+          openssl dgst -sha256 -verify keys/nightjar-signing.pub -signature <(base64 -d manifest.json.sig) manifest.json
 
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view engines-stable >/dev/null 2>&1 || \
-            gh release create engines-stable --title "Engine manifest (stable)" --notes "Signed engine manifest. Bulwark installs update from here automatically." --latest=false
+            gh release create engines-stable --title "Engine manifest (stable)" --notes "Signed engine manifest. Nightjar installs update from here automatically." --latest=false
           gh release upload engines-stable manifest.json manifest.json.sig --clobber

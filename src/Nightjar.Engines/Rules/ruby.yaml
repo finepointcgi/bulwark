@@ -1,0 +1,51 @@
+# Nightjar starter rules for Ruby / Rails. Apache-2.0.
+rules:
+  - id: nightjar.ruby.eval
+    languages: [ruby]
+    severity: ERROR
+    message: eval runs arbitrary code. Parse data instead.
+    metadata: { cwe: "CWE-95", category: security }
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: $O.instance_eval($X)
+          - pattern: $O.class_eval($X)
+      - pattern-not: eval("...")
+
+  - id: nightjar.ruby.command-injection
+    languages: [ruby]
+    severity: ERROR
+    message: Command run with an interpolated string. Use system("cmd", arg, ...) with separate arguments.
+    metadata: { cwe: "CWE-78", category: security }
+    pattern-either:
+      - pattern: system("...#{$X}...")
+      - pattern: exec("...#{$X}...")
+      - pattern: '`...#{$X}...`'
+
+  - id: nightjar.ruby.sql-interpolation
+    languages: [ruby]
+    severity: ERROR
+    message: "SQL built with string interpolation. Use placeholders, e.g. where('name = ?', name)."
+    metadata: { cwe: "CWE-89", category: security }
+    pattern-either:
+      - pattern: $M.where("...#{$X}...")
+      - pattern: $M.find_by_sql("...#{$X}...")
+      - pattern: $M.order("...#{$X}...")
+
+  - id: nightjar.ruby.unsafe-yaml
+    languages: [ruby]
+    severity: ERROR
+    message: YAML.load can instantiate arbitrary objects. Use YAML.safe_load.
+    metadata: { cwe: "CWE-502", category: security }
+    pattern-either:
+      - pattern: YAML.load($X)
+      - pattern: Marshal.load($X)
+
+  - id: nightjar.ruby.html-safe
+    languages: [ruby]
+    severity: WARNING
+    message: html_safe/raw disables output escaping. Make sure the value is not user input.
+    metadata: { cwe: "CWE-79", category: security }
+    pattern-either:
+      - pattern: $X.html_safe
+      - pattern: raw($X)

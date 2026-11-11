@@ -32,7 +32,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          dotnet run --project src/Bulwark.Cli --configuration Release -- engines watch \
+          dotnet run --project src/Nightjar.Cli --configuration Release -- engines watch \
             --min-age-days "${{ inputs.min-age-days || '14' }}" --write > "$RUNNER_TEMP/pr-body.md"
           code=$?
           set -e
@@ -48,13 +48,13 @@ jobs:
             name=$(basename "$dir")
             [ -f "$dir/Dockerfile" ] || continue
             version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' engines/engines.json)
-            docker build -t "bulwark-engines/$name:$version" "$dir"
+            docker build -t "nightjar-engines/$name:$version" "$dir"
           done
 
       - name: Canary with the new versions
         if: steps.watch.outputs.changed == 'true'
         run: |
-          dotnet run --project src/Bulwark.Cli --configuration Release -- canary --container 2>&1 | tee "$RUNNER_TEMP/canary.txt"
+          dotnet run --project src/Nightjar.Cli --configuration Release -- canary --container 2>&1 | tee "$RUNNER_TEMP/canary.txt"
 
       - name: Open pull request
         if: steps.watch.outputs.changed == 'true'
@@ -62,8 +62,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           branch="engine-bump/$(date -u +%Y%m%d)"
-          git config user.name "bulwark-engine-watch"
-          git config user.email "bulwark-engine-watch@users.noreply.github.com"
+          git config user.name "nightjar-engine-watch"
+          git config user.email "nightjar-engine-watch@users.noreply.github.com"
           git checkout -b "$branch"
           git add engines/
           git commit -m "Bump scanner engines to mature upstream releases"

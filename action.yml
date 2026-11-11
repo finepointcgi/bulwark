@@ -1,4 +1,4 @@
-name: Bulwark scan
+name: Nightjar scan
 description: Open-source SCA, SAST, secrets and IaC scanning with a new-code quality gate, PR comment and code scanning upload.
 branding:
   icon: shield
@@ -21,10 +21,10 @@ inputs:
     description: Upload results to GitHub code scanning (needs security-events write; true/false)
     default: "true"
   version:
-    description: Bulwark release to use (e.g. 1.2.0), "latest", or "source" to build this repository's code
+    description: Nightjar release to use (e.g. 1.2.0), "latest", or "source" to build this repository's code
     default: latest
   args:
-    description: Extra arguments for `bulwark scan`
+    description: Extra arguments for `nightjar scan`
     default: ""
 
 outputs:
@@ -35,31 +35,31 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install Bulwark
+    - name: Install Nightjar
       shell: bash
       env:
-        BULWARK_REPO: ${{ github.action_repository || github.repository }}
+        NIGHTJAR_REPO: ${{ github.action_repository || github.repository }}
         REQUESTED: ${{ inputs.version }}
       run: |
         if [ "$REQUESTED" = "source" ]; then
-          dotnet publish "$GITHUB_ACTION_PATH/src/Bulwark.Cli" -c Release -o "$RUNNER_TEMP/bulwark" >/dev/null
-          echo "$RUNNER_TEMP/bulwark" >> "$GITHUB_PATH"
+          dotnet publish "$GITHUB_ACTION_PATH/src/Nightjar.Cli" -c Release -o "$RUNNER_TEMP/nightjar" >/dev/null
+          echo "$RUNNER_TEMP/nightjar" >> "$GITHUB_PATH"
           for dir in "$GITHUB_ACTION_PATH"/engines/*/; do
             name=$(basename "$dir"); [ -f "$dir/Dockerfile" ] || continue
             version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' "$GITHUB_ACTION_PATH/engines/engines.json")
-            docker build -q -t "bulwark-engines/$name:$version" "$dir" >/dev/null
+            docker build -q -t "nightjar-engines/$name:$version" "$dir" >/dev/null
           done
         else
-          [ "$REQUESTED" = "latest" ] || export BULWARK_VERSION="$REQUESTED"
-          BULWARK_INSTALL_DIR="$RUNNER_TEMP/bulwark" sh "$GITHUB_ACTION_PATH/scripts/install.sh"
-          echo "$RUNNER_TEMP/bulwark" >> "$GITHUB_PATH"
+          [ "$REQUESTED" = "latest" ] || export NIGHTJAR_VERSION="$REQUESTED"
+          NIGHTJAR_INSTALL_DIR="$RUNNER_TEMP/nightjar" sh "$GITHUB_ACTION_PATH/scripts/install.sh"
+          echo "$RUNNER_TEMP/nightjar" >> "$GITHUB_PATH"
         fi
 
     - name: Scan
       id: scan
       shell: bash
       env:
-        BULWARK_HOME: ${{ runner.temp }}/bulwark-home
+        NIGHTJAR_HOME: ${{ runner.temp }}/nightjar-home
         SCAN_PATH: ${{ inputs.path }}
         FAIL_ON: ${{ inputs.fail-on }}
         NEW_ONLY: ${{ inputs.new-code-only }}
@@ -73,23 +73,23 @@ runs:
           git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
           since=(--since "origin/$BASE_REF" --history "origin/$BASE_REF..HEAD")
         fi
-        sarif="$RUNNER_TEMP/bulwark.sarif"
+        sarif="$RUNNER_TEMP/nightjar.sarif"
         set +e
         # shellcheck disable=SC2086
-        bulwark scan "$SCAN_PATH" --container --fail-on "$FAIL_ON" "${since[@]}" \
-          --sarif-output "$sarif" --summary-output "$RUNNER_TEMP/bulwark.md" $EXTRA_ARGS
+        nightjar scan "$SCAN_PATH" --container --fail-on "$FAIL_ON" "${since[@]}" \
+          --sarif-output "$sarif" --summary-output "$RUNNER_TEMP/nightjar.md" $EXTRA_ARGS
         code=$?
         set -e
         echo "sarif=$sarif" >> "$GITHUB_OUTPUT"
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
-        cat "$RUNNER_TEMP/bulwark.md" >> "$GITHUB_STEP_SUMMARY" || true
+        cat "$RUNNER_TEMP/nightjar.md" >> "$GITHUB_STEP_SUMMARY" || true
 
     - name: Upload to code scanning
       if: always() && inputs.upload-sarif == 'true' && steps.scan.outputs.sarif != ''
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.scan.outputs.sarif }}
-        category: bulwark
+        category: nightjar
 
     - name: Comment on pull request
       if: always() && inputs.comment == 'true' && github.event.pull_request.number != ''
@@ -98,11 +98,11 @@ runs:
         GH_TOKEN: ${{ github.token }}
         PR: ${{ github.event.pull_request.number }}
       run: |
-        body="$RUNNER_TEMP/bulwark.md"
+        body="$RUNNER_TEMP/nightjar.md"
         [ -f "$body" ] || exit 0
         # Update our previous comment (found by its hidden marker) instead of adding a new one each push.
         id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-          --jq '[.[] | select(.body | contains("<!-- bulwark-report -->"))][0].id // empty')
+          --jq '[.[] | select(.body | contains("<!-- nightjar-report -->"))][0].id // empty')
         if [ -n "$id" ]; then
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$body" >/dev/null
         else

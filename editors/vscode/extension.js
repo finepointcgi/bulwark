@@ -1,4 +1,4 @@
-// Runs `bulwark scan --format sarif` and publishes the results as VS Code diagnostics.
+// Runs `nightjar scan --format sarif` and publishes the results as VS Code diagnostics.
 // No dependencies: only the vscode API and Node's child_process.
 const vscode = require("vscode");
 const cp = require("child_process");
@@ -24,7 +24,7 @@ function toDiagnostics(sarif, root) {
       const endLine = Math.max(line, (region.endLine || region.startLine || 1) - 1);
       const range = new vscode.Range(line, 0, endLine, Number.MAX_SAFE_INTEGER);
       const diagnostic = new vscode.Diagnostic(range, result.message?.text || result.ruleId, LEVELS[result.level] ?? LEVELS.warning);
-      diagnostic.source = "bulwark";
+      diagnostic.source = "nightjar";
       diagnostic.code = result.ruleId;
       const file = vscode.Uri.file(path.resolve(root, decodeURIComponent(uri))).toString();
       if (!byFile.has(file)) byFile.set(file, []);
@@ -35,19 +35,19 @@ function toDiagnostics(sarif, root) {
 }
 
 function activate(context) {
-  const collection = vscode.languages.createDiagnosticCollection("bulwark");
-  const output = vscode.window.createOutputChannel("Bulwark");
+  const collection = vscode.languages.createDiagnosticCollection("nightjar");
+  const output = vscode.window.createOutputChannel("Nightjar");
   let running = false;
 
   async function scan() {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder || running) return;
     running = true;
-    const config = vscode.workspace.getConfiguration("bulwark");
+    const config = vscode.workspace.getConfiguration("nightjar");
     const args = ["scan", folder.uri.fsPath, "--format", "sarif", "--fail-on", "none", ...config.get("extraArguments", [])];
-    await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "Bulwark scanning…" }, () =>
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "Nightjar scanning…" }, () =>
       new Promise((resolve) => {
-        cp.execFile(config.get("executable", "bulwark"), args, { maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
+        cp.execFile(config.get("executable", "nightjar"), args, { maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
           if (stderr) output.appendLine(stderr);
           try {
             const sarif = JSON.parse(stdout);
@@ -56,7 +56,7 @@ function activate(context) {
               collection.set(vscode.Uri.parse(uri), diagnostics);
             }
           } catch (e) {
-            vscode.window.showErrorMessage(`Bulwark: could not read scan results (${error?.message || e.message}). See the Bulwark output channel.`);
+            vscode.window.showErrorMessage(`Nightjar: could not read scan results (${error?.message || e.message}). See the Nightjar output channel.`);
           }
           resolve();
         });
@@ -66,8 +66,8 @@ function activate(context) {
 
   context.subscriptions.push(
     collection, output,
-    vscode.commands.registerCommand("bulwark.scan", scan),
-    vscode.workspace.onDidSaveTextDocument(() => { if (vscode.workspace.getConfiguration("bulwark").get("scanOnSave")) scan(); }),
+    vscode.commands.registerCommand("nightjar.scan", scan),
+    vscode.workspace.onDidSaveTextDocument(() => { if (vscode.workspace.getConfiguration("nightjar").get("scanOnSave")) scan(); }),
   );
 }
 

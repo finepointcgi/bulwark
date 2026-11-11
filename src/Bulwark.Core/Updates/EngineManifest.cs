@@ -20,6 +20,9 @@ public sealed record EngineManifest
     public required DateTimeOffset Published { get; init; }
     public required IReadOnlyList<EngineSpec> Engines { get; init; }
 
+    /// <summary>Latest Bulwark release, for <c>bulwark self-update</c>. Covered by the manifest signature.</summary>
+    public BulwarkRelease? Bulwark { get; init; }
+
     public EngineSpec? Find(string name) =>
         Engines.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
@@ -33,6 +36,16 @@ public sealed record EngineManifest
         JsonSerializer.Deserialize<EngineManifest>(json, JsonOptions)
         ?? throw new InvalidDataException("Manifest is empty.");
 }
+
+/// <summary>A Bulwark CLI release: one self-contained binary per runtime identifier, pinned by SHA-256.</summary>
+public sealed record BulwarkRelease
+{
+    public required string Version { get; init; }
+    public required IReadOnlyList<BulwarkAsset> Assets { get; init; }
+}
+
+/// <param name="Rid">.NET runtime identifier, e.g. <c>linux-x64</c>, <c>osx-arm64</c>, <c>win-x64</c>.</param>
+public sealed record BulwarkAsset(string Rid, string Url, string Sha256);
 
 /// <summary>One engine pinned to an exact version and container image digest.</summary>
 public sealed record EngineSpec

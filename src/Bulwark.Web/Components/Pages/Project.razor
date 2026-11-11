@@ -1,4 +1,5 @@
 @page "/project/{Key}"
+@using Bulwark.Core.Ai
 @inject ReportArchive Archive
 
 <PageTitle>@(_report is null ? "Not found" : System.IO.Path.GetFileName(_report.Project)) · Bulwark</PageTitle>
@@ -17,6 +18,71 @@
         @string.Join(", ", _report.Engines.Select(e => $"{e.Engine} {e.Version}"))
     </p>
     <SeverityCounts Findings="_report.Findings" />
+    @if (_report.Metrics is { Count: > 0 } metrics)
+    {
+        <dl class="metrics">
+            @foreach (var (key, value) in metrics.OrderBy(m => m.Key, StringComparer.Ordinal))
+            {
+                <div><dt>@Bulwark.Core.Quality.MetricNames.Label(key)</dt><dd>@Bulwark.Core.Quality.MetricNames.Format(key, value)</dd></div>
+            }
+        </dl>
+    }
+    @if (_report.Findings.Any(f => f.Assessment is not null))
+    {
+        <p class="counts ai-counts">
+            <span class="muted">AI pen-test review:</span>
+            @foreach (var group in _report.Findings.Where(f => f.Assessment is not null).GroupBy(f => f.Assessment!.Verdict).OrderByDescending(g => g.Key))
+            {
+                <a class="ai-badge ai-@group.Key" href="@($"/project/{Key}?ai={group.Key}")">@group.Count() @AiAssessment.Label(group.Key)</a>
+            }
+        </p>
+    }
+    @if (_report.Pentest is { } pentest)
+    {
+        <div class="pentest">
+            <p>
+                <strong>Active test</strong> authorized by @pentest.AuthorizedBy
+                (<code>@pentest.AuthorizationReference</code>, valid until @pentest.AuthorizationExpires.ToLocalTime().ToString("g"))
+            </p>
+            <p class="muted">
+                @if (pentest.AuthenticatedWithHeader is { } header) { <text>authenticated (@header header) · </text> }
+                @if (pentest.OpenApi is { } spec) { <text>API scan from <code>@System.IO.Path.GetFileName(spec)</code> (@(pentest.ActiveScan ? "active" : "safe mode")) · </text> }
+                @pentest.RequestsAllowed requests sent · @pentest.RequestsBlocked blocked by scope ·
+                scope <code title="SHA-256 of the scope file">@pentest.ScopeSha256[..12]</code> ·
+                log <code>@pentest.RequestLog</code>
+            </p>
+            @if (pentest.Correlations.Count > 0)
+            {
+                <h4 class="corr-title">Static findings checked by this test</h4>
+                <ul class="correlations">
+                    @foreach (var c in pentest.Correlations)
+                    {
+                        <li>
+                            <span class="corr corr-@c.Status">@c.Status</span>
+                            <strong>@c.StaticTitle</strong>
+                            <span class="muted">@c.Explanation</span>
+                        </li>
+                    }
+                </ul>
+            }
+            @if (pentest.Plan is { } plan)
+            {
+                <details>
+                    <summary>Plan by @plan.PlannedBy: @string.Join(", ", plan.NucleiTags)@(plan.FocusPaths.Count > 0 ? $" · {plan.FocusPaths.Count} focus paths" : "")</summary>
+                    <div class="ai-body">
+                        @if (plan.Rationale is { } why) { <p>@why</p> }
+                        @if (plan.FocusPaths.Count > 0) { <p>Focus: @foreach (var path in plan.FocusPaths) { <code>@path</code><text> </text> }</p> }
+                        @foreach (var h in plan.Hypotheses) { <p>Tests static finding <code>@h.StaticFindingId[..Math.Min(12, h.StaticFindingId.Length)]</code>: @h.Test</p> }
+                        @if (plan.Rejected.Count > 0)
+                        {
+                            <h4>Refused by scope or allowlist</h4>
+                            <ul>@foreach (var r in plan.Rejected) { <li>@r</li> }</ul>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+    }
     @foreach (var failed in _report.Engines.Where(e => !e.Succeeded))
     {
         <p class="bad">@failed.Engine failed: @failed.Error</p>
@@ -39,6 +105,14 @@
                 <option value="@c" selected="@(CategoryFilter == c.ToString())">@c</option>
             }
         </select>
+        <select name="ai">
+            <option value="">Any AI verdict</option>
+            @foreach (var v in Enum.GetValues<Exploitability>().Reverse())
+            {
+                <option value="@v" selected="@(AiFilter == v.ToString())">@AiAssessment.Label(v)</option>
+            }
+            <option value="none" selected="@(AiFilter == "none")">Not reviewed</option>
+        </select>
         <input name="q" value="@Query" placeholder="Search package, id, title" />
         <button type="submit">Filter</button>
         <span class="muted">@_visible.Count of @_report.Findings.Count</span>
@@ -47,7 +121,7 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Severity</th><th>Category</th><th>Id</th><th>Finding</th><th>Fix</th><th>Engines</th></tr>
+                <tr><th>Severity</th><th>Category</th><th>Id</th><th>Finding</th><th>Fix</th><th>AI review</th><th>Engines</th></tr>
             </thead>
             <tbody>
                 @foreach (var f in _visible)
@@ -71,8 +145,10 @@
                             {
                                 <div class="muted"><code>@path</code></div>
                             }
+                            <TriageButtons @key="f.Id" Project="@_report.Project" Finding="f" />
                         </td>
                         <td>@string.Join(" / ", f.FixedVersions)</td>
+                        <td class="ai-cell"><AiAssessment Assessment="f.Assessment" /></td>
                         <td class="muted">@string.Join(", ", f.Engines)</td>
                     </tr>
                 }
@@ -85,6 +161,7 @@
     [Parameter] public string Key { get; set; } = "";
     [SupplyParameterFromQuery(Name = "severity")] public string? SeverityFilter { get; set; }
     [SupplyParameterFromQuery(Name = "category")] public string? CategoryFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "ai")] public string? AiFilter { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
 
     private ScanReport? _report;
@@ -107,6 +184,15 @@
         if (Enum.TryParse<FindingCategory>(CategoryFilter, out var category))
         {
             findings = findings.Where(f => f.Category == category);
+        }
+
+        if (AiFilter == "none")
+        {
+            findings = findings.Where(f => f.Assessment is null);
+        }
+        else if (Enum.TryParse<Exploitability>(AiFilter, out var verdict))
+        {
+            findings = findings.Where(f => f.Assessment?.Verdict == verdict);
         }
 
         if (!string.IsNullOrWhiteSpace(Query))

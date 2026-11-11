@@ -19,6 +19,15 @@ public sealed class ReportArchive(string homeDirectory)
         return path;
     }
 
+    /// <summary>Keeps the project's CycloneDX SBOM next to its report so `bulwark monitor` can re-check it.</summary>
+    public void SaveSbom(string project, Sbom.SoftwareBillOfMaterials sbom)
+    {
+        System.IO.Directory.CreateDirectory(Directory);
+        File.WriteAllText(SbomPath(project), sbom.CycloneDxJson);
+    }
+
+    public string SbomPath(string project) => Path.Combine(Directory, $"{KeyFor(project)}.cdx.json");
+
     /// <summary>Short stable id for a project path, used for file names and dashboard URLs.</summary>
     public static string KeyFor(string project) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(project)))[..16];
@@ -31,7 +40,7 @@ public sealed class ReportArchive(string homeDirectory)
         }
 
         var reports = new List<ScanReport>();
-        foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*.json"))
+        foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*.json").Where(f => !f.EndsWith(".cdx.json", StringComparison.Ordinal)))
         {
             try
             {

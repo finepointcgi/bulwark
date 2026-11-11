@@ -5,7 +5,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Same location the CLI writes to (BULWARK_HOME, default ~/.bulwark).
-builder.Services.AddSingleton(new ReportArchive(Bulwark.Core.Updates.ManifestStore.Default().HomeDirectory));
+var bulwarkHome = Bulwark.Core.Updates.ManifestStore.Default().HomeDirectory;
+builder.Services.AddSingleton(new ReportArchive(bulwarkHome));
+builder.Services.AddSingleton(new Bulwark.Core.Triage.TriageStore(bulwarkHome));
+builder.Services.AddHostedService<Bulwark.Web.MonitorService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

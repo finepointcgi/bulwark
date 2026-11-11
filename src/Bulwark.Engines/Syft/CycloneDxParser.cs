@@ -88,7 +88,9 @@ public static class CycloneDxParser
             if (name is not null && name.StartsWith("syft:location:", StringComparison.Ordinal) && name.EndsWith(":path", StringComparison.Ordinal)
                 && GetString(property, "value") is { } path)
             {
-                locations.Add(ToolRunner.ToProjectPath(path, sourcePath));
+                // Syft reports paths relative to the scanned folder ("/src/app/package.json" means the
+                // project's own src folder), so never strip a container mount prefix here.
+                locations.Add(path.TrimStart('/'));
             }
         }
 

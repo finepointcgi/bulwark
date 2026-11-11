@@ -13,6 +13,9 @@ public interface IEngine
     /// <summary>Short id that matches the engine's entry in the signed manifest.</summary>
     string Name { get; }
 
+    /// <summary>Manifest entry that pins this engine's tool, when several engines share one tool (trivy, trivy-image).</summary>
+    string ManifestName => Name;
+
     /// <summary>Engines with lower order run first; SBOM producers run before SBOM consumers.</summary>
     int Order => 100;
 
@@ -31,6 +34,9 @@ public sealed class ScanContext
 
     /// <summary>Set by the SBOM engine; read by license and vulnerability engines.</summary>
     public SoftwareBillOfMaterials? Sbom { get; set; }
+
+    /// <summary>Project-wide metrics engines can publish (coverage, duplication...). Copied into the report.</summary>
+    public Dictionary<string, double> Metrics { get; } = new(StringComparer.Ordinal);
 }
 
 public sealed record EngineResult(

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Bulwark.Tests" />
+    <EmbeddedResource Include="../../engines/engines.json" LogicalName="engines.json" />
   </ItemGroup>
 
 </Project>

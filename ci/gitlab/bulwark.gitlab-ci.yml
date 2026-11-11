@@ -1,0 +1,44 @@
+# Bulwark for GitLab CI. Include it from your .gitlab-ci.yml:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/OWNER/REPO/main/ci/gitlab/bulwark.gitlab-ci.yml
+#
+# Results show in the merge request widget and diff (code quality report), the job summary
+# artifact (bulwark.md), and SARIF for other tools. On merge requests only new findings fail
+# the job. Engines run as containers, so the job uses Docker-in-Docker.
+
+variables:
+  BULWARK_FAIL_ON: high
+  BULWARK_PATH: "."
+  BULWARK_ARGS: ""
+  BULWARK_REPO: OWNER/REPO
+
+bulwark:
+  stage: test
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    GIT_DEPTH: 0
+    BULWARK_HOME: $CI_PROJECT_DIR/.bulwark-home
+  before_script:
+    - apk add --no-cache curl git bash gcompat libstdc++ icu-libs >/dev/null
+    - BULWARK_INSTALL_DIR=/usr/local/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/$BULWARK_REPO/main/scripts/install.sh)"
+  script:
+    - |
+      since=""
+      if [ -n "$CI_MERGE_REQUEST_DIFF_BASE_SHA" ]; then
+        since="--since $CI_MERGE_REQUEST_DIFF_BASE_SHA --history $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD"
+      fi
+      bulwark scan "$BULWARK_PATH" --container --fail-on "$BULWARK_FAIL_ON" $since \
+        --sarif-output bulwark.sarif --summary-output bulwark.md --codeclimate-output gl-code-quality.json $BULWARK_ARGS
+  artifacts:
+    when: always
+    paths: [bulwark.sarif, bulwark.md]
+    reports:
+      codequality: gl-code-quality.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

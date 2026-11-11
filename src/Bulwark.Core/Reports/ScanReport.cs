@@ -16,6 +16,12 @@ public sealed record ScanReport
     public required IReadOnlyList<EngineRun> Engines { get; init; }
     public required IReadOnlyList<Finding> Findings { get; init; }
 
+    /// <summary>Set for active tests (`bulwark pentest`): who authorized it, what was sent, what the AI planned.</summary>
+    public Dast.PentestSummary? Pentest { get; init; }
+
+    /// <summary>Project-wide numbers (see <see cref="Quality.MetricNames"/>): coverage, duplication, complexity.</summary>
+    public IReadOnlyDictionary<string, double>? Metrics { get; init; }
+
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,

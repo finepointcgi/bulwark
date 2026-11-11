@@ -1,0 +1,79 @@
+name: engine-watch
+
+# Weekly: move engines to the newest upstream release that is at least 14 days old (time for
+# the community to catch bad or compromised releases), rebuild, run the canary, and open a PR.
+# A human reviews and merges; merging triggers engines-release, which signs and publishes.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      min-age-days:
+        description: Minimum age of an upstream release before adopting it
+        default: "14"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Check upstream releases
+        id: watch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          dotnet run --project src/Bulwark.Cli --configuration Release -- engines watch \
+            --min-age-days "${{ inputs.min-age-days || '14' }}" --write > "$RUNNER_TEMP/pr-body.md"
+          code=$?
+          set -e
+          if [ $code -eq 3 ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          [ $code -eq 0 ] || exit $code
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/pr-body.md"
+
+      - name: Rebuild self-built engines
+        if: steps.watch.outputs.changed == 'true'
+        run: |
+          for dir in engines/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/Dockerfile" ] || continue
+            version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' engines/engines.json)
+            docker build -t "bulwark-engines/$name:$version" "$dir"
+          done
+
+      - name: Canary with the new versions
+        if: steps.watch.outputs.changed == 'true'
+        run: |
+          dotnet run --project src/Bulwark.Cli --configuration Release -- canary --container 2>&1 | tee "$RUNNER_TEMP/canary.txt"
+
+      - name: Open pull request
+        if: steps.watch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="engine-bump/$(date -u +%Y%m%d)"
+          git config user.name "bulwark-engine-watch"
+          git config user.email "bulwark-engine-watch@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add engines/
+          git commit -m "Bump scanner engines to mature upstream releases"
+          git push --force origin "$branch"
+          {
+            cat "$RUNNER_TEMP/pr-body.md"
+            echo
+            echo "Canary: passed with the new versions (all engines still find the known issues)."
+            echo
+            echo "Merging triggers engines-release, which signs and publishes the manifest. Installs pick it up within a day."
+          } > "$RUNNER_TEMP/body.md"
+          gh pr create --title "Bump scanner engines" --body-file "$RUNNER_TEMP/body.md" --head "$branch" \
+            || gh pr edit "$branch" --body-file "$RUNNER_TEMP/body.md"

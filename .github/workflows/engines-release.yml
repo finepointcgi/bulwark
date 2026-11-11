@@ -1,0 +1,126 @@
+name: engines-release
+
+# Publishes the signed engine manifest that every Bulwark install auto-updates from:
+#   https://github.com/<owner>/<repo>/releases/download/engines-stable/manifest.json
+#
+# 1. builds the self-built engine images (linux/amd64 + linux/arm64) and pushes them to GHCR
+# 2. resolves every engine image to an immutable digest
+# 3. runs the canary against exactly those digests
+# 4. generates the manifest (including the latest Bulwark binaries), signs it, uploads it
+#
+# Needs the repository secret BULWARK_SIGNING_KEY (from `bulwark manifest keygen`); the matching
+# public key is committed at keys/bulwark-signing.pub and compiled into release binaries.
+
+on:
+  push:
+    branches: [main]
+    paths: ["engines/**", "src/Bulwark.Engines/Rules/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: engines-release
+  cancel-in-progress: false
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/bulwark-engines
+
+jobs:
+  build-images:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push per-architecture images
+        run: |
+          prefix=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
+          for dir in engines/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/Dockerfile" ] || continue
+            version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' engines/engines.json)
+            docker build --build-arg TARGETARCH=${{ matrix.arch }} -t "$prefix/$name:$version-${{ matrix.arch }}" "$dir"
+            docker push "$prefix/$name:$version-${{ matrix.arch }}"
+          done
+
+  manifest:
+    needs: build-images
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Combine architectures and resolve digests
+        run: |
+          prefix=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
+          : > digests.txt
+          for row in $(jq -c '.engines[]' engines/engines.json); do
+            name=$(echo "$row" | jq -r .name)
+            build=$(echo "$row" | jq -r '.build // empty')
+            tag=$(echo "$row" | jq -r '.upstream[0].tag')
+            version=$(echo "$row" | jq -r '.upstream[] | select(.version) | .version' | head -1)
+            [ "$version" = "{bare}" ] && version="${tag#v}" || version="$tag"
+            if [ -n "$build" ]; then
+              ref="$prefix/$name:$version"
+              docker buildx imagetools create -t "$ref" "$ref-amd64" "$ref-arm64"
+            else
+              ref="$(echo "$row" | jq -r .image):$version"
+            fi
+            digest=$(docker buildx imagetools inspect "$ref" | awk '/^Digest:/ {print $2; exit}')
+            [ -n "$digest" ] || { echo "no digest for $ref"; exit 1; }
+            echo "$name $digest" >> digests.txt
+          done
+          cat digests.txt
+
+      - name: Fetch latest Bulwark release binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh release list --exclude-drafts --exclude-pre-releases --json tagName --jq '[.[] | select(.tagName | startswith("v"))][0].tagName' || true)
+          if [ -n "$tag" ]; then
+            gh release download "$tag" --pattern bulwark-assets.txt --clobber && echo "BULWARK_VERSION=${tag#v}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate manifest
+        run: |
+          extra=""
+          [ -n "${BULWARK_VERSION:-}" ] && extra="--bulwark-version $BULWARK_VERSION --bulwark-assets bulwark-assets.txt"
+          prefix=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
+          dotnet run --project src/Bulwark.Cli --configuration Release -- manifest generate \
+            --engines engines/engines.json --digests digests.txt --image-prefix "$prefix" \
+            --channel stable $extra --out manifest.json
+
+      - name: Canary against the exact digests being published
+        run: dotnet run --project src/Bulwark.Cli --configuration Release --no-build -- canary --container --manifest manifest.json
+
+      - name: Sign
+        env:
+          SIGNING_KEY: ${{ secrets.BULWARK_SIGNING_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.key"
+          dotnet run --project src/Bulwark.Cli --configuration Release --no-build -- manifest sign manifest.json --private-key "$RUNNER_TEMP/signing.key"
+          rm -f "$RUNNER_TEMP/signing.key"
+          openssl dgst -sha256 -verify keys/bulwark-signing.pub -signature <(base64 -d manifest.json.sig) manifest.json
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view engines-stable >/dev/null 2>&1 || \
+            gh release create engines-stable --title "Engine manifest (stable)" --notes "Signed engine manifest. Bulwark installs update from here automatically." --latest=false
+          gh release upload engines-stable manifest.json manifest.json.sig --clobber

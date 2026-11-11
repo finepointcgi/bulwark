@@ -123,8 +123,17 @@ public sealed class EvidenceCollector(string rootPath, int maxChars = 40_000, in
         }
     }
 
+    /// <summary>Files this short are shown whole: a reviewer that sees only windows can't rule out other routes.</summary>
+    private const int WholeFileLines = 150;
+
     private static EvidenceExcerpt Excerpt(string path, string[] lines, IReadOnlyList<int> centers, int context)
     {
+        if (lines.Length <= WholeFileLines)
+        {
+            centers = [1];
+            context = lines.Length;
+        }
+
         // Merge overlapping windows around each hit so one excerpt covers a cluster of uses.
         var windows = centers
             .Select(c => (Start: Math.Max(1, c - context), End: Math.Min(lines.Length, c + context)))

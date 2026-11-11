@@ -67,3 +67,41 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
 .filters select, .filters input, .filters button { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 code { font-size: .85em; }
+/* AI pen-test review */
+:root { --ai-likely: #b42318; --ai-possible: #b08800; --ai-not: #1a7f37; --ai-unknown: #6b6b73; }
+@media (prefers-color-scheme: dark) {
+    :root { --ai-likely: #ff6b5e; --ai-possible: #e5c24a; --ai-not: #4ac26b; --ai-unknown: #9a9aa5; }
+}
+.ai-counts { align-items: center; margin: 8px 0 0; }
+.ai-badge { display: inline-block; font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; text-decoration: none; white-space: nowrap; }
+.ai-Likely { color: var(--ai-likely); } .ai-Possible { color: var(--ai-possible); }
+.ai-NotExploitable { color: var(--ai-not); } .ai-Unknown { color: var(--ai-unknown); }
+.ai-cell { min-width: 150px; max-width: 420px; }
+.ai summary { cursor: pointer; display: flex; gap: 6px; align-items: center; list-style: none; }
+.ai summary::-webkit-details-marker { display: none; }
+.ai-body { margin-top: 8px; font-size: .85rem; line-height: 1.45; }
+.ai-body h4 { margin: 10px 0 4px; font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.ai-body p, .ai-body ol { margin: 0 0 6px; }
+.ai-body ol { padding-left: 18px; }
+.pentest { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: .9rem; }
+.pentest p { margin: 0 0 6px; }
+.pentest summary { cursor: pointer; }
+.pentest code { overflow-wrap: anywhere; }
+.corr-title { margin: 10px 0 4px; font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.correlations { list-style: none; padding: 0; margin: 0 0 8px; }
+.correlations li { margin-bottom: 6px; line-height: 1.45; }
+.corr { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; margin-right: 4px; }
+.corr-Confirmed { color: var(--ai-likely); } .corr-Refuted { color: var(--ai-not); } .corr-Inconclusive { color: var(--ai-unknown); }
+
+/* Triage controls */
+.triage { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.triage button, .triage input { font: inherit; font-size: .8rem; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.triage input { cursor: text; min-width: 14ch; flex: 1; }
+.triage button:disabled { opacity: .5; cursor: default; }
+.triage-state { font-size: .8rem; font-weight: 600; color: var(--muted); }
+
+/* Code quality metrics */
+.metrics { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 0; }
+.metrics div { display: flex; flex-direction: column; }
+.metrics dt { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+.metrics dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }

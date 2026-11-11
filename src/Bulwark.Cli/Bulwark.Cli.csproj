@@ -13,6 +13,13 @@
     <Nullable>enable</Nullable>
     <AssemblyName>bulwark</AssemblyName>
     <RootNamespace>Bulwark.Cli</RootNamespace>
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
   </PropertyGroup>
+
+  <!-- Release builds: dotnet publish -p:BulwarkManifestUrl=https://... with keys/bulwark-signing.pub present. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="BulwarkManifestUrl" Value="$(BulwarkManifestUrl)" />
+    <EmbeddedResource Include="../../keys/bulwark-signing.pub" LogicalName="bulwark-signing.pub" Condition="Exists('../../keys/bulwark-signing.pub')" />
+  </ItemGroup>
 
 </Project>

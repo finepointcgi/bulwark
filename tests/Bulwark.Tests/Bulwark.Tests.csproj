@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Bulwark.Core\Bulwark.Core.csproj" />
     <ProjectReference Include="..\..\src\Bulwark.Engines\Bulwark.Engines.csproj" />
+    <ProjectReference Include="..\..\src\Bulwark.Ai\Bulwark.Ai.csproj" />
   </ItemGroup>
 
   <ItemGroup>

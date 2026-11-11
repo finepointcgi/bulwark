@@ -36,6 +36,20 @@ public static partial class Fingerprint
     }
 
     /// <summary>
+    /// Finding from active testing. Keyed on rule, method, the URL without query values (query
+    /// parameter names are kept, sorted) and the affected parameter, so re-tests produce the same id.
+    /// </summary>
+    public static string ForDynamic(string ruleId, string method, Uri uri, string? parameter)
+    {
+        var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2)[0])
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal);
+        var location = $"{uri.Scheme}://{uri.Host.ToLowerInvariant()}:{uri.Port}{uri.AbsolutePath}?{string.Join('&', query)}";
+        return Hash("dynamic", ruleId, method.ToUpperInvariant(), location, parameter ?? "");
+    }
+
+    /// <summary>
     /// Prefer a CVE id, then GHSA, then whatever the engine gave, so two engines that
     /// report the same CVE under different ids still produce one fingerprint.
     /// </summary>

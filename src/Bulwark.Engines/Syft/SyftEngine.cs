@@ -35,7 +35,10 @@ public sealed class SyftEngine(ToolRunner runner, LicensePolicy licensePolicy) :
         var json = await File.ReadAllTextAsync(sbomPath, cancellationToken);
         context.Sbom = CycloneDxParser.Parse(json, context.RootPath);
 
-        var findings = licensePolicy.Evaluate(context.Sbom).Select(f => f with { Engines = [Name, .. f.Engines] }).ToList();
+        // The project is a component of its own SBOM; its license is not a third-party concern.
+        var own = OwnPackages.Find(context.RootPath, context.Profile.Manifests);
+        var thirdParty = context.Sbom with { Components = context.Sbom.Components.Where(c => !own.Contains(c.Package.Name)).ToList() };
+        var findings = licensePolicy.Evaluate(thirdParty).Select(f => f with { Engines = [Name, .. f.Engines] }).ToList();
         return new EngineResult(Name, findings, stopwatch.Elapsed);
     }
 }

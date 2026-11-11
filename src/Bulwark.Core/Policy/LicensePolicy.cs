@@ -24,13 +24,22 @@ public sealed class LicensePolicy
 
     public bool FlagUnknown { get; init; } = true;
 
+    /// <summary>
+    /// Only flag "no license detected" where package metadata normally carries one. NuGet binaries,
+    /// GitHub Actions and OS packages rarely expose it to SBOM tools, so flagging them is pure noise.
+    /// </summary>
+    public IReadOnlySet<string> UnknownLicenseEcosystems { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "npm", "PyPI", "crates.io", "RubyGems", "Packagist", "Maven", "Pub",
+    };
+
     public IEnumerable<Finding> Evaluate(SoftwareBillOfMaterials sbom)
     {
         foreach (var component in sbom.Components)
         {
             if (component.Licenses.Count == 0)
             {
-                if (FlagUnknown)
+                if (FlagUnknown && UnknownLicenseEcosystems.Contains(component.Package.Ecosystem))
                 {
                     yield return Create(component, "UNKNOWN", Severity.Low, "No license detected",
                         "No license could be determined for this package. Check it manually before shipping.");

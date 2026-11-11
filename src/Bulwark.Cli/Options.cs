@@ -42,5 +42,6 @@ internal sealed class Options
         return options;
     }
 
-    private static bool IsFlag(string name) => name is "container";
+    private static bool IsFlag(string name) => name is "container" or "i-am-authorized"
+        or "no-update" or "skip-canary" or "write" or "new-only" or "pr" or "dry-run" or "image-include-unfixed";
 }

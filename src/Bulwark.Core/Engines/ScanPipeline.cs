@@ -11,6 +11,9 @@ namespace Bulwark.Core.Engines;
 /// </summary>
 public sealed class ScanPipeline(IEnumerable<IEngine> engines, EngineManifest manifest)
 {
+    /// <summary>The SBOM produced during the last run, if an SBOM engine ran. Saved for continuous monitoring.</summary>
+    public Sbom.SoftwareBillOfMaterials? Sbom { get; private set; }
+
     public async Task<ScanReport> RunAsync(string rootPath, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         var started = DateTimeOffset.UtcNow;
@@ -34,7 +37,7 @@ public sealed class ScanPipeline(IEnumerable<IEngine> engines, EngineManifest ma
                 }
 
                 progress?.Report($"Running {engine.Name}...");
-                var version = manifest.Find(engine.Name)?.Version ?? "?";
+                var version = manifest.Find(engine.ManifestName)?.Version ?? "built-in";
                 EngineResult result;
                 try
                 {
@@ -49,6 +52,7 @@ public sealed class ScanPipeline(IEnumerable<IEngine> engines, EngineManifest ma
                 findings.AddRange(result.Findings);
             }
 
+            Sbom = context.Sbom;
             return new ScanReport
             {
                 Project = root,
@@ -57,6 +61,7 @@ public sealed class ScanPipeline(IEnumerable<IEngine> engines, EngineManifest ma
                 ManifestSequence = manifest.Sequence,
                 Engines = runs,
                 Findings = FindingMerger.Merge(findings),
+                Metrics = context.Metrics.Count > 0 ? new Dictionary<string, double>(context.Metrics) : null,
             };
         }
         finally

@@ -53,6 +53,12 @@ public sealed class ManifestUpdater(HttpClient http, ManifestStore store, string
             return new UpdateResult(UpdateStatus.Rejected, $"Engines without an image digest: {string.Join(", ", unpinned)}.");
         }
 
+        if (store.WasRejected(candidate.Sequence))
+        {
+            return new UpdateResult(UpdateStatus.AlreadyCurrent,
+                $"Manifest {candidate.Sequence} failed the canary check here before; waiting for a newer one.");
+        }
+
         var (current, isBuiltIn) = store.Load();
         if (!isBuiltIn && candidate.Sequence < current.Sequence)
         {

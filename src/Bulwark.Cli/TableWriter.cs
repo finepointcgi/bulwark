@@ -11,6 +11,10 @@ internal static class TableWriter
         var text = new StringBuilder();
         text.AppendLine();
         text.AppendLine($"Scanned {report.Project} in {report.Seconds:0.0}s with {string.Join(", ", report.Engines.Select(e => $"{e.Engine} {e.Version}"))}");
+        if (QualityGates.Summary(report) is { Length: > 0 } metrics)
+        {
+            text.AppendLine($"Code quality: {metrics}");
+        }
 
         if (report.Findings.Count == 0)
         {
@@ -28,7 +32,8 @@ internal static class TableWriter
             var where = finding.Location?.Path is { } path
                 ? finding.Location.StartLine is { } line ? $"  ({path}:{line})" : $"  ({path})"
                 : "";
-            text.AppendLine($"{Label(finding.Severity),-9} {finding.Category,-14} {finding.RuleId,-22} {finding.Title}{fix}{where}");
+            var triaged = finding.Triage is TriageState.New or TriageState.Confirmed ? "" : $"  [{finding.Triage}]";
+            text.AppendLine($"{Label(finding.Severity),-9} {finding.Category,-14} {finding.RuleId,-22} {finding.Title}{fix}{where}{triaged}");
             if (finding.Assessment is { } ai)
             {
                 text.AppendLine($"          AI: {Verdict(ai.Verdict)} ({ai.Confidence:P0}) {ai.Reasoning}");

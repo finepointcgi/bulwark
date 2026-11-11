@@ -8,6 +8,12 @@ public enum FindingCategory
     Secret,
     Code,
     Infrastructure,
+
+    /// <summary>Found by active testing (DAST) against a running target.</summary>
+    Dynamic,
+
+    /// <summary>Maintainability: complexity, duplication. Never security-relevant on its own.</summary>
+    Quality,
 }
 
 /// <summary>Severity, ordered so that comparisons work (Critical &gt; High &gt; ...).</summary>

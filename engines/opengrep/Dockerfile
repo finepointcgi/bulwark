@@ -27,5 +27,7 @@ RUN set -eu; \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*
 
+# Unprivileged: the engine only reads the mounted source and writes to the work folder.
+USER 65532:65532
 ENV HOME=/tmp
 ENTRYPOINT ["opengrep"]

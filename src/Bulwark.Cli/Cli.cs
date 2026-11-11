@@ -17,9 +17,9 @@ namespace Bulwark.Cli;
 
 internal static class Cli
 {
-    private const int ExitPassed = 0;
-    private const int ExitGateFailed = 1;
-    private const int ExitError = 2;
+    internal const int ExitPassed = 0;
+    internal const int ExitGateFailed = 1;
+    internal const int ExitError = 2;
 
     private static string Version =>
         typeof(Cli).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "dev";
@@ -32,8 +32,15 @@ internal static class Cli
             return options.Command switch
             {
                 "scan" => await ScanAsync(options),
+                "pentest" => await PentestCommand.RunAsync(options),
+                "engines" when options.Positional.FirstOrDefault() == "watch" => await UpdateCommands.WatchAsync(options),
                 "engines" => Engines(options),
-                "update" => await UpdateAsync(options),
+                "update" => await UpdateCommands.UpdateAsync(options),
+                "canary" => await UpdateCommands.CanaryAsync(options),
+                "triage" => TriageCommand.Run(options),
+                "monitor" => await MonitorCommand.RunAsync(options),
+                "fix" => await FixCommand.RunAsync(options),
+                "self-update" => await UpdateCommands.SelfUpdateAsync(options),
                 "manifest" => Manifest(options),
                 "version" or "--version" => Print(Version),
                 _ => Help(),
@@ -55,6 +62,8 @@ internal static class Cli
             return ExitError;
         }
 
+        await UpdateCommands.AutoUpdateAsync(options);
+
         var store = ManifestStore.Default();
         var (manifest, isBuiltIn) = store.Load();
         if (isBuiltIn)
@@ -62,27 +71,7 @@ internal static class Cli
             Console.Error.WriteLine("warning: using built-in engine versions (unpinned). Run `bulwark update` to install a signed manifest.");
         }
 
-        var runner = new ToolRunner(manifest, options.Has("container") ? ToolMode.Container : ToolMode.Auto);
-        var ruleDirectories = options.Value("rules")?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [];
-        foreach (var directory in ruleDirectories.Where(d => !Directory.Exists(d)))
-        {
-            Console.Error.WriteLine($"error: rules directory not found: {directory}");
-            return ExitError;
-        }
-
-        IEngine[] engines =
-        [
-            new SyftEngine(runner, new LicensePolicy()),
-            new OsvScannerEngine(runner),
-            new GitleaksEngine(runner, HistoryScope.Parse(options.Value("history"))),
-            new OpengrepEngine(runner, ruleDirectories),
-            new TrivyIacEngine(runner),
-        ];
-        var only = options.Value("engines")?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (only is not null)
-        {
-            engines = engines.Where(e => only.Contains(e.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
-        }
+        var engines = EngineFactory.Create(EngineFactory.Runner(manifest, options), options);
 
         var quiet = options.Value("format") is "json" or "sarif" && options.Value("output") is null;
         var progress = new Progress<string>(message => { if (!quiet) { Console.Error.WriteLine($"» {message}"); } });
@@ -90,20 +79,39 @@ internal static class Cli
         using var cancel = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 
-        var report = await new ScanPipeline(engines, manifest).RunAsync(path, progress, cancel.Token);
+        var pipeline = new ScanPipeline(engines, manifest);
+        var report = await pipeline.RunAsync(path, progress, cancel.Token);
+        (report, var newIds) = TriageCommand.AfterScan(report, options, store.HomeDirectory);
         if (options.Value("ai") is { } provider)
         {
             report = await ReviewWithAiAsync(report, provider, options, progress, cancel.Token);
         }
 
-        new ReportArchive(store.HomeDirectory).Save(report);
+        var archive = new ReportArchive(store.HomeDirectory);
+        archive.Save(report);
+        if (pipeline.Sbom is { } sbom)
+        {
+            archive.SaveSbom(report.Project, sbom); // For `bulwark monitor` and the dashboard's daily re-check.
+        }
 
+        var exitCode = await PublishAsync(report, options, newIds);
+        return Math.Max(exitCode, QualityGates.Check(report, options));
+    }
+
+    /// <summary>
+    /// Renders a report in the requested format and applies the quality gate. Shared by scan and pentest.
+    /// With <paramref name="newIds"/> (from --since/--baseline) the gate only considers new findings.
+    /// </summary>
+    internal static async Task<int> PublishAsync(ScanReport report, Options options, IReadOnlySet<string>? newIds = null)
+    {
         var rendered = options.Value("format") switch
         {
             "json" => report.ToJson(),
             "sarif" => SarifWriter.Write(report, Version),
+            "markdown" or "md" => MarkdownWriter.Write(report, newIds, options.Value("fail-on") ?? "high"),
+            "codeclimate" => CodeClimateWriter.Write(report),
             null or "table" => TableWriter.Write(report),
-            var other => throw new ArgumentException($"unknown format '{other}' (use table, json or sarif)"),
+            var other => throw new ArgumentException($"unknown format '{other}' (use table, json, sarif, markdown or codeclimate)"),
         };
 
         if (options.Value("output") is { } output)
@@ -114,6 +122,22 @@ internal static class Cli
         else
         {
             Console.WriteLine(rendered);
+        }
+
+        // CI: extra outputs from the same scan (code scanning upload, PR comment, GitLab MR widget).
+        if (options.Value("sarif-output") is { } sarifPath)
+        {
+            await File.WriteAllTextAsync(sarifPath, SarifWriter.Write(report, Version));
+        }
+
+        if (options.Value("summary-output") is { } summaryPath)
+        {
+            await File.WriteAllTextAsync(summaryPath, MarkdownWriter.Write(report, newIds, options.Value("fail-on") ?? "high"));
+        }
+
+        if (options.Value("codeclimate-output") is { } codeClimatePath)
+        {
+            await File.WriteAllTextAsync(codeClimatePath, CodeClimateWriter.Write(report));
         }
 
         foreach (var failed in report.Engines.Where(e => !e.Succeeded))
@@ -127,10 +151,12 @@ internal static class Cli
             return ExitPassed;
         }
 
-        var gate = new QualityGate(Enum.Parse<Severity>(failOn, ignoreCase: true)).Evaluate(report.Findings);
+        var gated = newIds is null ? report.Findings : report.Findings.Where(f => newIds.Contains(f.Id)).ToList();
+        var scope = newIds is null ? "" : " new";
+        var gate = new QualityGate(Enum.Parse<Severity>(failOn, ignoreCase: true)).Evaluate(gated);
         Console.Error.WriteLine(gate.Passed
-            ? $"Quality gate passed (fail-on {failOn})."
-            : $"Quality gate FAILED: {gate.Blocking.Count} finding(s) at {failOn} or above.");
+            ? $"Quality gate passed (fail-on {failOn}{(newIds is null ? "" : ", new findings only")})."
+            : $"Quality gate FAILED: {gate.Blocking.Count}{scope} finding(s) at {failOn} or above.");
         return gate.Passed ? ExitPassed : ExitGateFailed;
     }
 
@@ -139,14 +165,7 @@ internal static class Cli
         ScanReport report, string provider, Options options, IProgress<string> progress, CancellationToken cancellationToken)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        var model = options.Value("ai-model");
-        ILlmClient llm = provider.ToLowerInvariant() switch
-        {
-            "claude" => new ClaudeLlmClient(model),
-            "ollama" => new OllamaLlmClient(http, model ?? OllamaLlmClient.DefaultModel),
-            _ => throw new ArgumentException($"unknown AI provider '{provider}' (use claude or ollama)"),
-        };
-
+        var llm = CreateLlm(provider, options, http);
         if (llm.IsRemote)
         {
             Console.Error.WriteLine($"notice: AI review sends finding details and source excerpts to {llm.Name}. Use --ai ollama to keep code local.");
@@ -170,6 +189,18 @@ internal static class Cli
         return reviewed;
     }
 
+    internal static ILlmClient CreateLlm(string provider, Options options, HttpClient http)
+    {
+        var model = options.Value("ai-model");
+        return provider.ToLowerInvariant() switch
+        {
+            "claude" => new ClaudeLlmClient(model),
+            "claude-code" => new ClaudeCodeLlmClient(model),
+            "ollama" => new OllamaLlmClient(http, model ?? OllamaLlmClient.DefaultModel),
+            _ => throw new ArgumentException($"unknown AI provider '{provider}' (use claude, claude-code or ollama)"),
+        };
+    }
+
     private static int Engines(Options options)
     {
         var store = ManifestStore.Default();
@@ -185,42 +216,6 @@ internal static class Cli
         return ExitPassed;
     }
 
-    private static async Task<int> UpdateAsync(Options options)
-    {
-        var keyPath = options.Value("key") ?? Environment.GetEnvironmentVariable("BULWARK_TRUSTED_KEY");
-        var publicKey = keyPath is not null ? await File.ReadAllTextAsync(keyPath) : TrustedKeys.Project;
-        if (publicKey is null)
-        {
-            Console.Error.WriteLine("error: no trusted public key. Pass --key <public.pem> or set BULWARK_TRUSTED_KEY.");
-            return ExitError;
-        }
-
-        var store = ManifestStore.Default();
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd($"bulwark/{Version}");
-        var updater = new ManifestUpdater(http, store, publicKey);
-
-        UpdateResult result;
-        if (options.Value("from-file") is { } file)
-        {
-            var signature = await File.ReadAllTextAsync(options.Value("signature") ?? file + ".sig");
-            result = updater.Install(await File.ReadAllBytesAsync(file), signature);
-        }
-        else
-        {
-            var url = options.Value("url") ?? Environment.GetEnvironmentVariable("BULWARK_MANIFEST_URL") ?? TrustedKeys.DefaultManifestUrl;
-            if (url is null)
-            {
-                Console.Error.WriteLine("error: no manifest URL. Pass --url or set BULWARK_MANIFEST_URL.");
-                return ExitError;
-            }
-
-            result = await updater.UpdateAsync(new Uri(url), CancellationToken.None);
-        }
-
-        Console.WriteLine(result.Message);
-        return result.Status == UpdateStatus.Rejected ? ExitError : ExitPassed;
-    }
 
     /// <summary>Maintainer commands for producing signed manifests in the release pipeline.</summary>
     private static int Manifest(Options options)
@@ -250,6 +245,9 @@ internal static class Cli
                 return ExitPassed;
             }
 
+            case "generate":
+                return UpdateCommands.Generate(options);
+
             case "sign":
             {
                 var manifestPath = options.Positional.ElementAtOrDefault(1) ?? throw new ArgumentException("usage: bulwark manifest sign <manifest.json> --private-key <key>");
@@ -276,7 +274,7 @@ internal static class Cli
     private static int Help()
     {
         Console.WriteLine($"""
-            bulwark {Version} - open-source SCA, license and security scanning
+            bulwark {Version} - open-source security and code quality scanning
 
             usage:
               bulwark scan [path] [--format table|json|sarif] [--output file]
@@ -284,25 +282,39 @@ internal static class Cli
                                   [--rules dir1,dir2]   extra Opengrep rule folders
                                   [--history full|off|<range>]  secrets in git history (default full;
                                                         e.g. origin/main..HEAD for just a PR's commits)
-                                  [--ai claude|ollama] [--ai-model name] [--ai-min-severity medium] [--ai-max 25]
+                                  [--since <git-ref> | --baseline <report.json|last>]  gate on new findings only
+                                  [--min-coverage 80] [--max-duplication 5] [--max-complexity 15]
+                                  [--image ref,ref] [--image-include-unfixed]   container images to scan
+                                  [--format markdown|codeclimate] [--sarif-output f] [--summary-output f]
+                                  [--codeclimate-output f] [--no-update]
+                                  [--ai claude|claude-code|ollama] [--ai-model name] [--ai-min-severity medium] [--ai-max 25]
+              bulwark triage <id> false-positive|accepted-risk|confirmed|fixed|reset --reason "..."
+                                  [--expires yyyy-mm-dd] [--project path] [--shared]   (also in the dashboard)
+              bulwark monitor [--project path] [--webhook url] [--fail-on high]
+                                  re-check saved SBOMs against new advisories (run daily)
+              bulwark fix [path] [--dry-run] [--pr] [--min-severity low]
+                                  upgrade vulnerable dependencies to the smallest version that fixes them
+              bulwark pentest init [scope.json]    write a scope file to fill in
+              bulwark pentest <url> --scope scope.json --i-am-authorized
+                                  [--ai claude|claude-code|ollama] [--ai-model name]  AI plans the targeted checks
+                                  [--source path]  seed the plan from that project's last `scan --ai`
+                                  [--openapi spec.json|url]  also run ZAP's API scan from the spec
+                                  [--engines zap,nuclei] [--format ...] [--output file] [--fail-on ...]
               bulwark engines [--container]        show pinned engines and how each will run
-              bulwark update [--url url | --from-file manifest.json] [--key public.pem]
+              bulwark update [--url url | --from-file manifest.json] [--key public.pem] [--skip-canary]
+                                  install a newer signed manifest, canary-check it, roll back on failure
+                                  (scan also checks once a day; BULWARK_AUTO_UPDATE=0 or --no-update to opt out)
+              bulwark canary [--manifest file]     check every engine still finds the known issues
+              bulwark self-update                  install the Bulwark release named in the signed manifest
               bulwark manifest keygen [dir]        (maintainers) create a signing key pair
               bulwark manifest sign <file> --private-key <key>
+              bulwark manifest generate --digests file [--image-prefix ...] [--out manifest.json]
+              bulwark engines watch [--min-age-days 14] [--write]   bump engines.json to mature upstream releases
               bulwark version
 
-            exit codes: 0 passed, 1 quality gate failed, 2 error
+            exit codes: 0 passed, 1 a gate failed (or monitor found new advisories), 2 error
             """);
         return ExitPassed;
     }
 }
 
-/// <summary>
-/// Release-time constants. Both are null until the project publishes its first signed manifest;
-/// set them in the release build so `bulwark update` works with no flags.
-/// </summary>
-internal static class TrustedKeys
-{
-    public const string? Project = null;
-    public const string? DefaultManifestUrl = null;
-}

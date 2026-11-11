@@ -1,0 +1,98 @@
+@rendermode InteractiveServer
+@using Bulwark.Core.Triage
+@inject TriageStore Store
+@inject ReportArchive Archive
+
+@* Triage controls for one finding. Saves to the local triage store (same file the CLI uses),
+   so the next scan and the quality gate respect the decision. *@
+<div class="triage">
+    @if (_state is TriageState.New or TriageState.Confirmed)
+    {
+        @if (_choosing is null)
+        {
+            <button type="button" @onclick="() => Choose(TriageState.FalsePositive)">False positive</button>
+            <button type="button" @onclick="() => Choose(TriageState.AcceptedRisk)">Accept risk</button>
+            @if (_state == TriageState.New)
+            {
+                <button type="button" @onclick="() => SaveAsync(TriageState.Confirmed, null)">Confirm</button>
+            }
+        }
+        else
+        {
+            <input @bind="_reason" @bind:event="oninput" placeholder="Why? (required)" aria-label="Reason" />
+            <button type="button" disabled="@string.IsNullOrWhiteSpace(_reason)" @onclick="() => SaveAsync(_choosing.Value, _reason)">Save</button>
+            <button type="button" @onclick="() => _choosing = null">Cancel</button>
+        }
+    }
+    else
+    {
+        <span class="triage-state">@Label(_state)</span>
+        <button type="button" @onclick="() => SaveAsync(TriageState.New, null)">Reopen</button>
+    }
+    @if (_error is not null)
+    {
+        <div class="bad">@_error</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Project { get; set; } = "";
+    [Parameter, EditorRequired] public Finding Finding { get; set; } = default!;
+
+    private TriageState _state;
+    private TriageState? _choosing;
+    private string? _reason;
+    private string? _error;
+
+    protected override void OnParametersSet() => _state = Finding.Triage;
+
+    private void Choose(TriageState state)
+    {
+        _choosing = state;
+        _reason = null;
+    }
+
+    private Task SaveAsync(TriageState state, string? reason)
+    {
+        try
+        {
+            Store.Save(Project, new TriageDecision
+            {
+                FindingId = Finding.Id,
+                State = state,
+                Reason = reason,
+                By = Environment.UserName,
+                At = DateTimeOffset.UtcNow,
+                Title = Finding.Title,
+            }, shared: false);
+
+            // Keep the saved report in step so the page and counts are right before the next scan.
+            if (Archive.LoadAll().FirstOrDefault(r => r.Project == Project) is { } report)
+            {
+                Archive.Save(report with
+                {
+                    Findings = report.Findings.Select(f => f.Id == Finding.Id ? f with { Triage = state } : f).ToList(),
+                });
+            }
+
+            _state = state;
+            _choosing = null;
+            _error = null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _error = $"Could not save: {e.Message}";
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public static string Label(TriageState state) => state switch
+    {
+        TriageState.FalsePositive => "False positive",
+        TriageState.AcceptedRisk => "Accepted risk",
+        TriageState.Fixed => "Fixed",
+        TriageState.Confirmed => "Confirmed",
+        _ => "New",
+    };
+}

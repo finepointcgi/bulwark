@@ -1,0 +1,50 @@
+name: release
+
+# On a version tag (v1.2.3): build self-contained single-file Bulwark binaries for every
+# platform, publish them with a checksum list, then re-run engines-release so the signed
+# manifest points at the new binaries and `bulwark self-update` can install them.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet test --configuration Release
+
+      - name: Publish binaries
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/engines-stable/manifest.json"
+          mkdir -p dist
+          : > dist/bulwark-assets.txt
+          for rid in linux-x64 linux-arm64 osx-x64 osx-arm64 win-x64 win-arm64; do
+            dotnet publish src/Bulwark.Cli --configuration Release --runtime "$rid" --self-contained \
+              -p:PublishSingleFile=true -p:DebugType=none -p:Version="$version" -p:BulwarkManifestUrl="$url" -o "out/$rid"
+            ext=""; [[ "$rid" == win-* ]] && ext=".exe"
+            asset="bulwark-$version-$rid$ext"
+            cp "out/$rid/bulwark$ext" "dist/$asset"
+            sha=$(sha256sum "dist/$asset" | cut -d' ' -f1)
+            echo "$rid https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/$asset $sha" >> dist/bulwark-assets.txt
+          done
+          (cd dist && sha256sum bulwark-* > SHA256SUMS)
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Bulwark $GITHUB_REF_NAME" --generate-notes --verify-tag
+
+      - name: Refresh signed manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run engines-release.yml --ref main

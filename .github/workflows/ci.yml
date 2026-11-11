@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet build --configuration Release
+      - run: dotnet test --configuration Release --no-build
+
+  # Every engine (at the versions in engines/engines.json) must still find the known issues
+  # in the canary corpus. Catches broken rules and engine regressions on every PR.
+  canary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build self-built engine images
+        run: |
+          for dir in engines/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/Dockerfile" ] || continue
+            version=$(jq -r --arg n "$name" '.engines[] | select(.name==$n) | .upstream[0].tag' engines/engines.json)
+            docker build -t "bulwark-engines/$name:$version" "$dir"
+          done
+      - name: Validate SAST rules
+        run: |
+          version=$(jq -r '.engines[] | select(.name=="opengrep") | .upstream[0].tag' engines/engines.json)
+          docker run --rm -v "$PWD/src/Bulwark.Engines/Rules:/rules:ro" "bulwark-engines/opengrep:$version" validate /rules
+      - name: Canary
+        run: dotnet run --project src/Bulwark.Cli --configuration Release -- canary --container

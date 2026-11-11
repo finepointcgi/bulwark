@@ -1,0 +1,5 @@
+# Bulwark scanning its own repository: these files are vulnerable on purpose.
+src/Bulwark.Engines/Canary/Corpus/
+tests/**/Fixtures/
+# Test code that builds fake secrets and vulnerable snippets as test data.
+tests/**/*Tests.cs

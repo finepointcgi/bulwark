@@ -55,10 +55,8 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
         var containerWork = containerWorkPath ?? ContainerWork;
         var spec = Spec(engine);
         var cache = arguments.Any(a => a.Contains(CacheToken, StringComparison.Ordinal)) ? CacheFor(engine) : null;
-        if (UseLocal(spec) is null)
-        {
-            await EngineImages.EnsureAsync(spec, cancellationToken);
-        }
+        // Build a missing self-built image, or fall back to the mirror if Docker Hub rate-limits the pull.
+        var image = UseLocal(spec) is null ? await EngineImages.ResolveAsync(spec, cancellationToken) : spec.ImageReference;
         string? containerName = null;
         environment ??= new Dictionary<string, string>();
         var startInfo = new ProcessStartInfo
@@ -130,7 +128,7 @@ public sealed class ToolRunner(EngineManifest manifest, ToolMode mode = ToolMode
                 startInfo.Environment[key] = value;
             }
 
-            startInfo.ArgumentList.Add(spec.ImageReference);
+            startInfo.ArgumentList.Add(image);
 
             foreach (var argument in arguments)
             {

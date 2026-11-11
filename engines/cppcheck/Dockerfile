@@ -5,7 +5,7 @@
 #   docker build -t bulwark-engines/cppcheck:2.22.0 engines/cppcheck
 #
 # Bumped automatically by `bulwark engines watch` (VERSION and SOURCE_SHA256).
-FROM debian:bookworm-slim AS build
+FROM mirror.gcr.io/library/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS build
 
 ARG VERSION=2.22.0
 ARG SOURCE_SHA256=d74945deb2d50393430e07596b766f8a779512c7f60dac2a30ea64e059ece57b
@@ -21,7 +21,7 @@ RUN set -eu; \
     cmake --build /build --parallel "$(nproc)"; \
     cmake --install /build
 
-FROM debian:bookworm-slim
+FROM mirror.gcr.io/library/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 COPY --from=build /usr/local/bin/cppcheck /usr/local/bin/cppcheck
 COPY --from=build /usr/local/share/Cppcheck /usr/local/share/Cppcheck
 # Unprivileged: the engine only reads the mounted source and writes to the work folder.

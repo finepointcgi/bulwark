@@ -4,7 +4,7 @@
 #   docker build -t bulwark-engines/lizard:1.24.3 engines/lizard
 #
 # Bumped automatically by `bulwark engines watch` (VERSION and SOURCE_SHA256).
-FROM python:3.12-slim
+FROM mirror.gcr.io/library/python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ARG VERSION=1.24.3
 ARG SOURCE_SHA256=1cea733ac0b051d78ae2fdffaaf7757658bfb1b186c948e6e4a03a05874d8507

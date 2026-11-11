@@ -64,8 +64,21 @@ Every engine version is declared once, in [`engines/engines.json`](engines/engin
 - **Weekly upstream watch** ([`engine-watch.yml`](.github/workflows/engine-watch.yml)). The
   workflow moves each engine to the newest upstream release that is **at least 14 days old**,
   which gives the community time to catch broken or compromised releases. It also rewrites
-  Dockerfile pins (release hashes, base images), rebuilds the engines and runs the canary
-  check, then opens a PR.
+  Dockerfile pins (release hashes), rebuilds the engines and runs the canary check, then opens
+  a PR.
+- **Base images too.** The same PR updates the `FROM` lines of Bulwark's own engine images:
+  - Versioned tags move to the newest patch release of the same minor version and variant
+    (`alpine:3.24.2` → `3.24.4`), so security fixes land without surprise major upgrades.
+  - Every tag is pinned by digest, so a rebuilt tag such as `bookworm-slim` only changes
+    through a reviewed PR.
+  - Base images use a shorter 2-day maturity window, because Docker's official images are
+    rebuilt often for security fixes (`--base-min-age-days`).
+  - Run it yourself with `bulwark engines watch --only base [--write]`.
+- **No Docker Hub pull limits.** Base images are pulled through `mirror.gcr.io`, Google's
+  Docker Hub cache. If an engine image pull from Docker Hub is still rate-limited (HTTP 429),
+  Bulwark retries through the mirror; with digest pins the content is identical. The watcher
+  reads tag lists from Docker Hub's catalog API and digests from the mirror. Neither counts
+  toward pull limits, and no credentials are sent to either.
 - **Signed manifest** ([`engines-release.yml`](.github/workflows/engines-release.yml)). On
   merge, the workflow builds the self-built engine images for amd64 and arm64 and resolves every
   image to a digest. It runs the canary check against exactly those digests, then signs the

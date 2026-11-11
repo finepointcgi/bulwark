@@ -187,23 +187,59 @@ internal static class UpdateCommands
         }
 
         var write = options.Has("write");
-        var (catalog, changes) = await new EngineWatcher(http, minAge).CheckAsync(EngineCatalog.Load(catalogPath), root, write, CancellationToken.None);
-        if (changes.Count == 0)
+        var only = options.Value("only"); // "engines" or "base"; default both
+        var catalog = EngineCatalog.Load(catalogPath);
+        IReadOnlyList<PinChange> changes = [];
+        if (only != "base")
         {
-            Console.Error.WriteLine($"All engines are on their newest release older than {minAge.TotalDays:0} days.");
-            return 3;
+            (catalog, changes) = await new EngineWatcher(http, minAge).CheckAsync(catalog, root, write, CancellationToken.None);
         }
-
-        if (write)
+        if (write && changes.Count > 0)
         {
             catalog.Save(catalogPath);
         }
 
-        Console.WriteLine($"Engine updates (releases at least {minAge.TotalDays:0} days old):\n");
-        Console.WriteLine("| Engine | Upstream | From | To | Released |\n|---|---|---|---|---|");
-        foreach (var c in changes)
+        // Base images of self-built engines. A separate client: the GitHub token must never be
+        // sent to Docker Hub or the mirror.
+        var baseMinAge = TimeSpan.FromDays(double.Parse(options.Value("base-min-age-days") ?? "2", CultureInfo.InvariantCulture));
+        using var registry = Http();
+        var baseWatcher = new BaseImageWatcher(registry, baseMinAge);
+        var baseChanges = new List<PinChange>();
+        foreach (var engine in catalog.Engines.Where(e => e.Build is not null && only != "engines"))
         {
-            Console.WriteLine($"| {c.Engine} | [{c.Repo}](https://github.com/{c.Repo}/releases/tag/{c.To}) | {c.From} | {c.To} | {c.Published:yyyy-MM-dd} |");
+            var dockerfile = Path.Combine(root, engine.Build!, "Dockerfile");
+            if (File.Exists(dockerfile))
+            {
+                baseChanges.AddRange(await baseWatcher.CheckAsync(engine.Name, dockerfile, write, CancellationToken.None));
+            }
+        }
+
+        if (changes.Count == 0 && baseChanges.Count == 0)
+        {
+            Console.Error.WriteLine($"All engines are on their newest release older than {minAge.TotalDays:0} days, and base images are current.");
+            return 3;
+        }
+
+        if (changes.Count > 0)
+        {
+            Console.WriteLine($"Engine updates (releases at least {minAge.TotalDays:0} days old):\n");
+            Console.WriteLine("| Engine | Upstream | From | To | Released |\n|---|---|---|---|---|");
+            foreach (var c in changes)
+            {
+                Console.WriteLine($"| {c.Engine} | [{c.Repo}](https://github.com/{c.Repo}/releases/tag/{c.To}) | {c.From} | {c.To} | {c.Published:yyyy-MM-dd} |");
+            }
+
+            Console.WriteLine();
+        }
+
+        if (baseChanges.Count > 0)
+        {
+            Console.WriteLine($"Base image updates (newest patch release, pinned by digest, pulled via {BaseImageWatcher.Mirror}):\n");
+            Console.WriteLine("| Engine | Image | From | To |\n|---|---|---|---|");
+            foreach (var c in baseChanges)
+            {
+                Console.WriteLine($"| {c.Engine} | {c.Repo["base image ".Length..]} | `{c.From}` | `{c.To}` |");
+            }
         }
 
         return Passed;

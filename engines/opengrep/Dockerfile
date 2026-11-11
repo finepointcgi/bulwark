@@ -5,7 +5,7 @@
 #
 # To bump: change VERSION and both hashes (from the release's asset digests), then
 # update the manifest with the new image digest.
-FROM debian:bookworm-slim
+FROM mirror.gcr.io/library/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 ARG TARGETARCH
 ARG VERSION=v1.33.1

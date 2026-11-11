@@ -5,24 +5,69 @@ using Bulwark.Core.Updates;
 namespace Bulwark.Engines.Execution;
 
 /// <summary>
-/// Builds a self-built engine image (opengrep, cppcheck, lizard, nuclei...) the first time it is
-/// needed and not present, from the Dockerfile compiled into Bulwark. Signed manifests point at
-/// published images instead, so this only matters before the first update or offline.
+/// Makes sure an engine image is available before it runs, and returns the reference to run:
+/// <list type="bullet">
+/// <item>self-built images (opengrep, cppcheck, lizard, nuclei…) are built on first use from the
+/// Dockerfile compiled into Bulwark (signed manifests point at published images instead);</item>
+/// <item>Docker Hub images that hit the anonymous pull limit (HTTP 429) are pulled through
+/// <see cref="BaseImageWatcher.Mirror"/> instead. With a digest pin the content is byte-identical,
+/// so the mirror changes nothing about what runs.</item>
+/// </list>
 /// </summary>
 public static class EngineImages
 {
     public const string LocalPrefix = "bulwark-engines/";
     private const string ResourcePrefix = "engine-images/";
-    private static readonly ConcurrentDictionary<string, Task> Ensured = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Task<string>> Resolved = new(StringComparer.Ordinal);
 
-    public static Task EnsureAsync(EngineSpec spec, CancellationToken cancellationToken)
+    public static Task<string> ResolveAsync(EngineSpec spec, CancellationToken cancellationToken) =>
+        Resolved.GetOrAdd(spec.ImageReference, _ => spec.Image.StartsWith(LocalPrefix, StringComparison.Ordinal) && spec.Digest is null
+            ? BuildIfMissingAsync(spec, cancellationToken).ContinueWith(_ => spec.ImageReference, cancellationToken, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default)
+            : PullAsync(spec.ImageReference, cancellationToken));
+
+    /// <summary>
+    /// The mirror's name for a Docker Hub image, or null for other registries.
+    /// <c>anchore/syft:v1</c> → <c>mirror.gcr.io/anchore/syft:v1</c>; <c>alpine@sha256:…</c> → <c>mirror.gcr.io/library/alpine@sha256:…</c>.
+    /// </summary>
+    public static string? MirrorReference(string reference)
     {
-        if (!spec.Image.StartsWith(LocalPrefix, StringComparison.Ordinal) || spec.Digest is not null)
+        var at = reference.IndexOf('@');
+        var name = at >= 0 ? reference[..at] : reference;
+        var pin = at >= 0 ? reference[at..] : "";
+        var parsed = BaseImageWatcher.Parse(name);
+        if (parsed is null || name.StartsWith(BaseImageWatcher.Mirror + "/", StringComparison.OrdinalIgnoreCase))
         {
-            return Task.CompletedTask; // Published images are pulled by docker run itself.
+            return null;
         }
 
-        return Ensured.GetOrAdd(spec.ImageReference, _ => BuildIfMissingAsync(spec, cancellationToken));
+        var hasTag = name.LastIndexOf(':') > name.LastIndexOf('/');
+        return $"{BaseImageWatcher.Mirror}/{parsed.Repository}" + (hasTag || pin.Length == 0 ? $":{parsed.Tag}" : "") + pin;
+    }
+
+    private static async Task<string> PullAsync(string reference, CancellationToken cancellationToken)
+    {
+        if ((await RunDockerWithOutputAsync(["image", "inspect", reference], cancellationToken)).Code == 0)
+        {
+            return reference;
+        }
+
+        var (code, output) = await RunDockerWithOutputAsync(["pull", "-q", reference], cancellationToken);
+        if (code == 0)
+        {
+            return reference;
+        }
+
+        var rateLimited = output.Contains("toomanyrequests", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("429", StringComparison.Ordinal);
+        if (rateLimited && MirrorReference(reference) is { } mirror
+            && (await RunDockerWithOutputAsync(["pull", "-q", mirror], cancellationToken)).Code == 0)
+        {
+            Console.Error.WriteLine($"» Docker Hub pull limit reached; using {mirror}");
+            return mirror;
+        }
+
+        return reference; // Let docker run report the real error.
     }
 
     public static IReadOnlyList<string> EmbeddedEngines() =>
@@ -66,6 +111,28 @@ public static class EngineImages
         finally
         {
             try { Directory.Delete(context, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    private static async Task<(int Code, string Output)> RunDockerWithOutputAsync(string[] args, CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in args)
+        {
+            start.ArgumentList.Add(arg);
+        }
+
+        try
+        {
+            using var process = Process.Start(start)!;
+            var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+            return (process.ExitCode, await stdout + await stderr);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return (-1, "docker is not installed");
         }
     }
 

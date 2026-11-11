@@ -309,7 +309,8 @@ internal static class Cli
               bulwark manifest keygen [dir]        (maintainers) create a signing key pair
               bulwark manifest sign <file> --private-key <key>
               bulwark manifest generate --digests file [--image-prefix ...] [--out manifest.json]
-              bulwark engines watch [--min-age-days 14] [--write]   bump engines.json to mature upstream releases
+              bulwark engines watch [--min-age-days 14] [--base-min-age-days 2] [--only engines|base] [--write]
+                                  bump engines.json and engine base images to mature releases
               bulwark version
 
             exit codes: 0 passed, 1 a gate failed (or monitor found new advisories), 2 error

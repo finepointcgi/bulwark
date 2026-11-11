@@ -60,7 +60,7 @@ public sealed class ScanPipeline(IEnumerable<IEngine> engines, EngineManifest ma
                 Seconds = stopwatch.Elapsed.TotalSeconds,
                 ManifestSequence = manifest.Sequence,
                 Engines = runs,
-                Findings = FindingMerger.Merge(findings),
+                Findings = Dependencies.ReachabilityAnalyzer.Annotate(root, FindingMerger.Merge(findings)),
                 Metrics = context.Metrics.Count > 0 ? new Dictionary<string, double>(context.Metrics) : null,
             };
         }

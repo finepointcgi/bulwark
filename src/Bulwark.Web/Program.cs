@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 var bulwarkHome = Bulwark.Core.Updates.ManifestStore.Default().HomeDirectory;
 builder.Services.AddSingleton(new ReportArchive(bulwarkHome));
 builder.Services.AddSingleton(new Bulwark.Core.Triage.TriageStore(bulwarkHome));
+builder.Services.AddSingleton(new ScanHistory(bulwarkHome));
 builder.Services.AddHostedService<Bulwark.Web.MonitorService>();
 
 builder.Services.AddRazorComponents()

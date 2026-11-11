@@ -67,6 +67,9 @@ public sealed record Finding
 
     public TriageState Triage { get; init; } = TriageState.New;
 
+    /// <summary>For dependency vulnerabilities: whether first-party code imports the package directly.</summary>
+    public Reachability Reachability { get; init; } = Reachability.Unknown;
+
     /// <summary>AI pen-test review, when `--ai` was used. Advisory; never changes severity or the gate.</summary>
     public Ai.ExploitabilityAssessment? Assessment { get; init; }
 }
@@ -78,4 +81,14 @@ public enum TriageState
     FalsePositive,
     AcceptedRisk,
     Fixed,
+}
+
+/// <summary>Whether a vulnerable dependency is imported by first-party code. Not proof of exploitability either way.</summary>
+public enum Reachability
+{
+    Unknown,
+    Imported,
+
+    /// <summary>No first-party file imports it directly; it may still arrive via another dependency.</summary>
+    NotImported,
 }

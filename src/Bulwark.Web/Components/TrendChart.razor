@@ -1,0 +1,40 @@
+@* Stacked severity trend over the last scans. Server-rendered SVG: no JavaScript, works offline. *@
+<figure class="trend">
+    <svg viewBox="0 0 @W @H" role="img" aria-label="Open findings over time">
+        @foreach (var (name, css, line) in Lines())
+        {
+            <polyline class="trend-@css" fill="none" stroke-width="2" points="@line" />
+        }
+    </svg>
+    <figcaption class="muted">
+        Last @Points.Count scans · now @Points[^1].Total open
+        (<span class="trend-key-Critical">critical @Points[^1].Critical</span>,
+        <span class="trend-key-High">high @Points[^1].High</span>,
+        medium @Points[^1].Medium, low @Points[^1].Low)
+        @if (Points[^1].New > 0 || Points[^1].Resolved > 0)
+        {
+            <text> · +@Points[^1].New new, −@Points[^1].Resolved resolved since previous scan</text>
+        }
+    </figcaption>
+</figure>
+
+@code {
+    private const int W = 600, H = 120, Pad = 8;
+
+    [Parameter, EditorRequired] public IReadOnlyList<HistoryPoint> Points { get; set; } = [];
+
+    private IEnumerable<(string Name, string Css, string Line)> Lines()
+    {
+        var max = Math.Max(1, Points.Max(p => p.Total));
+        string Path(Func<HistoryPoint, int> value) => string.Join(" ", Points.Select((p, i) =>
+        {
+            var x = Pad + (W - 2 * Pad) * (Points.Count == 1 ? 0 : (double)i / (Points.Count - 1));
+            var y = H - Pad - (H - 2 * Pad) * (double)value(p) / max;
+            return FormattableString.Invariant($"{x:0.#},{y:0.#}");
+        }));
+
+        yield return ("Total", "Total", Path(p => p.Total));
+        yield return ("Critical", "Critical", Path(p => p.Critical));
+        yield return ("High", "High", Path(p => p.High));
+    }
+}

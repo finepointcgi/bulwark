@@ -105,3 +105,11 @@ code { font-size: .85em; }
 .metrics div { display: flex; flex-direction: column; }
 .metrics dt { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
 .metrics dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.trend { margin: 1rem 0 0; }
+.trend svg { width: 100%; max-width: 600px; height: auto; background: var(--surface-2, transparent); border-radius: 6px; }
+.trend-Total { stroke: currentColor; opacity: .7; }
+.trend-Critical { stroke: #c0392b; }
+.trend-High { stroke: #e67e22; }
+.trend-key-Critical { color: #c0392b; }
+.trend-key-High { color: #e67e22; }

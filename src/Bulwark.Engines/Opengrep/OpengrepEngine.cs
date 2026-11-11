@@ -16,7 +16,7 @@ public sealed class OpengrepEngine(ToolRunner runner, IReadOnlyList<string>? ext
     /// <summary>Languages the bundled rule pack covers. Custom rules make the engine run for any language.</summary>
     private static readonly HashSet<string> CoveredLanguages = new(StringComparer.OrdinalIgnoreCase)
     {
-        "csharp", "javascript", "typescript", "python", "java", "go", "c", "cpp",
+        "csharp", "javascript", "typescript", "python", "java", "go", "c", "cpp", "php", "ruby",
     };
 
     private const string RulesFolder = "rules";

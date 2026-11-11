@@ -40,6 +40,9 @@ internal static class Cli
                 "triage" => TriageCommand.Run(options),
                 "monitor" => await MonitorCommand.RunAsync(options),
                 "fix" => await FixCommand.RunAsync(options),
+                "sbom" => await SbomCommand.RunAsync(options),
+                "hook" => HookCommand.Hook(options),
+                "precommit" => await HookCommand.PreCommitAsync(options),
                 "self-update" => await UpdateCommands.SelfUpdateAsync(options),
                 "manifest" => Manifest(options),
                 "version" or "--version" => Print(Version),
@@ -88,7 +91,9 @@ internal static class Cli
         }
 
         var archive = new ReportArchive(store.HomeDirectory);
+        var previous = archive.Load(report.Project);
         archive.Save(report);
+        new ScanHistory(store.HomeDirectory).Record(report, previous);
         if (pipeline.Sbom is { } sbom)
         {
             archive.SaveSbom(report.Project, sbom); // For `bulwark monitor` and the dashboard's daily re-check.
@@ -152,6 +157,13 @@ internal static class Cli
         }
 
         var gated = newIds is null ? report.Findings : report.Findings.Where(f => newIds.Contains(f.Id)).ToList();
+        if (options.Has("ignore-unimported"))
+        {
+            var skipped = gated.Count(f => f.Reachability == Reachability.NotImported);
+            gated = gated.Where(f => f.Reachability != Reachability.NotImported).ToList();
+            Console.Error.WriteLine($"Reachability: {skipped} dependency finding(s) not imported by first-party code excluded from the gate (they may still be reachable through other dependencies).");
+        }
+
         var scope = newIds is null ? "" : " new";
         var gate = new QualityGate(Enum.Parse<Severity>(failOn, ignoreCase: true)).Evaluate(gated);
         Console.Error.WriteLine(gate.Passed
@@ -278,7 +290,7 @@ internal static class Cli
 
             usage:
               bulwark scan [path] [--format table|json|sarif] [--output file]
-                                  [--fail-on critical|high|medium|low|none] [--engines a,b] [--container]
+                                  [--fail-on critical|high|medium|low|none] [--ignore-unimported] [--engines a,b] [--container]
                                   [--rules dir1,dir2]   extra Opengrep rule folders
                                   [--history full|off|<range>]  secrets in git history (default full;
                                                         e.g. origin/main..HEAD for just a PR's commits)
@@ -290,6 +302,8 @@ internal static class Cli
                                   [--ai claude|claude-code|ollama] [--ai-model name] [--ai-min-severity medium] [--ai-max 25]
               bulwark triage <id> false-positive|accepted-risk|confirmed|fixed|reset --reason "..."
                                   [--expires yyyy-mm-dd] [--project path] [--shared]   (also in the dashboard)
+              bulwark sbom [path] [--format cyclonedx|spdx] [--vex] [--output file]
+              bulwark hook install|uninstall      git pre-commit secret scan of staged changes
               bulwark monitor [--project path] [--webhook url] [--fail-on high]
                                   re-check saved SBOMs against new advisories (run daily)
               bulwark fix [path] [--dry-run] [--pr] [--min-severity low]

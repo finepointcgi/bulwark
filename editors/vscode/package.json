@@ -1,0 +1,23 @@
+{
+  "name": "bulwark",
+  "displayName": "Bulwark",
+  "description": "Shows Bulwark scan findings (SAST, secrets, dependencies, IaC) as editor diagnostics.",
+  "version": "0.1.0",
+  "publisher": "bulwark",
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [{ "command": "bulwark.scan", "title": "Bulwark: Scan workspace" }],
+    "configuration": {
+      "title": "Bulwark",
+      "properties": {
+        "bulwark.executable": { "type": "string", "default": "bulwark", "description": "Path to the bulwark CLI." },
+        "bulwark.scanOnSave": { "type": "boolean", "default": false, "description": "Rescan after saving a file (can be slow for large repositories)." },
+        "bulwark.extraArguments": { "type": "array", "items": { "type": "string" }, "default": ["--no-update"], "description": "Extra arguments for `bulwark scan`." }
+      }
+    }
+  }
+}

@@ -19,6 +19,14 @@ public sealed class ReportArchive(string homeDirectory)
         return path;
     }
 
+    /// <summary>The last saved report for a project, or null.</summary>
+    public ScanReport? Load(string project)
+    {
+        var path = Path.Combine(Directory, $"{KeyFor(project)}.json");
+        try { return File.Exists(path) ? ScanReport.FromJson(File.ReadAllText(path)) : null; }
+        catch (Exception e) when (e is System.Text.Json.JsonException or InvalidDataException or IOException) { return null; }
+    }
+
     /// <summary>Keeps the project's CycloneDX SBOM next to its report so `bulwark monitor` can re-check it.</summary>
     public void SaveSbom(string project, Sbom.SoftwareBillOfMaterials sbom)
     {

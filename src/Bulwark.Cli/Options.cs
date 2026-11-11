@@ -43,5 +43,5 @@ internal sealed class Options
     }
 
     private static bool IsFlag(string name) => name is "container" or "i-am-authorized"
-        or "no-update" or "skip-canary" or "write" or "new-only" or "pr" or "dry-run" or "image-include-unfixed";
+        or "no-update" or "skip-canary" or "write" or "new-only" or "pr" or "dry-run" or "image-include-unfixed" or "ignore-unimported" or "vex";
 }

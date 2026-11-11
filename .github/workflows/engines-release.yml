@@ -80,7 +80,14 @@ jobs:
             else
               ref="$(echo "$row" | jq -r .image):$version"
             fi
-            digest=$(docker buildx imagetools inspect "$ref" | awk '/^Digest:/ {print $2; exit}')
+            digest=$(docker buildx imagetools inspect "$ref" 2>/dev/null | awk '/^Digest:/ {print $2; exit}' || true)
+            if [ -z "$digest" ]; then
+              # Docker Hub may rate-limit shared runners (429). mirror.gcr.io serves identical
+              # content, so the digest is the same; strip any registry host and retry there.
+              path="${ref#docker.io/}"
+              case "$path" in */*) ;; *) path="library/$path" ;; esac
+              digest=$(docker buildx imagetools inspect "mirror.gcr.io/$path" | awk '/^Digest:/ {print $2; exit}')
+            fi
             [ -n "$digest" ] || { echo "no digest for $ref"; exit 1; }
             echo "$name $digest" >> digests.txt
           done

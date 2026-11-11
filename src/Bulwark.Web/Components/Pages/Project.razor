@@ -1,6 +1,7 @@
 @page "/project/{Key}"
 @using Bulwark.Core.Ai
 @inject ReportArchive Archive
+@inject ScanHistory History
 
 <PageTitle>@(_report is null ? "Not found" : System.IO.Path.GetFileName(_report.Project)) · Bulwark</PageTitle>
 
@@ -26,6 +27,10 @@
                 <div><dt>@Bulwark.Core.Quality.MetricNames.Label(key)</dt><dd>@Bulwark.Core.Quality.MetricNames.Format(key, value)</dd></div>
             }
         </dl>
+    }
+    @if (_history.Count > 1)
+    {
+        <TrendChart Points="_history" />
     }
     @if (_report.Findings.Any(f => f.Assessment is not null))
     {
@@ -165,6 +170,7 @@
     [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
 
     private ScanReport? _report;
+    private IReadOnlyList<HistoryPoint> _history = [];
     private List<Finding> _visible = [];
 
     protected override void OnParametersSet()
@@ -175,6 +181,7 @@
             return;
         }
 
+        _history = History.Load(_report.Project);
         IEnumerable<Finding> findings = _report.Findings;
         if (Enum.TryParse<Severity>(SeverityFilter, out var minimum))
         {

@@ -1,0 +1,7 @@
+# For https://pre-commit.com users: add this repository to .pre-commit-config.yaml
+- id: bulwark-secrets
+  name: Bulwark secret scan (staged changes)
+  entry: bulwark precommit
+  language: system
+  pass_filenames: false
+  always_run: true

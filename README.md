@@ -130,6 +130,14 @@ Opt out of automatic checks with `BULWARK_AUTO_UPDATE=0` or `--no-update`.
   `overrides` for transitive dependencies), NuGet, pip `requirements*.txt` pins and Go modules.
   `--pr` commits to a branch and opens a pull request.
 
+## Prioritizing, exporting and catching problems early
+
+- **Reachability.** Dependency vulnerabilities are marked when no first-party file imports the package (npm, PyPI, Go, NuGet). It is shown as `[not imported directly]` and in the dashboard. It is a hint, not proof: the package may still arrive through another dependency, so `--ignore-unimported` only removes those findings from the *gate*, never from reports.
+- **SBOM and VEX.** `bulwark sbom [path] [--format cyclonedx|spdx] [--vex] [--output file]`. With `--vex`, CycloneDX gets a `vulnerabilities` section whose states come from your triage decisions (false positive → `false_positive`, accepted risk → `exploitable` / `will_not_fix`, fixed → `resolved`, otherwise `in_triage`).
+- **Trends.** Every scan appends a point to a per-project history (`~/.bulwark/reports/history/*.jsonl`, plain text so there is no native database to ship). The dashboard shows open findings over the last scans and what is new or resolved since the previous one.
+- **Before the commit.** `bulwark hook install` adds a git pre-commit hook that scans the *staged* content for secrets and blocks the commit (`--no-verify` bypasses it). `.pre-commit-hooks.yaml` is provided for the pre-commit framework. `editors/vscode` is a small extension that shows scan results as editor diagnostics.
+- **More taint rules.** Spring (`@RequestParam` and friends), ASP.NET Core action parameters, PHP and Rails join the existing Python, JavaScript, C#, Java and Go flows.
+
 ## CI
 
 **GitHub Actions**:

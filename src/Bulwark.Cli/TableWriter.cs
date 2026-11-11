@@ -33,6 +33,7 @@ internal static class TableWriter
                 ? finding.Location.StartLine is { } line ? $"  ({path}:{line})" : $"  ({path})"
                 : "";
             var triaged = finding.Triage is TriageState.New or TriageState.Confirmed ? "" : $"  [{finding.Triage}]";
+            if (finding.Reachability == Reachability.NotImported) { triaged += "  [not imported directly]"; }
             text.AppendLine($"{Label(finding.Severity),-9} {finding.Category,-14} {finding.RuleId,-22} {finding.Title}{fix}{where}{triaged}");
             if (finding.Assessment is { } ai)
             {

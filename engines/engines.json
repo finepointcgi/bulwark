@@ -1,23 +1,50 @@
 {
-  "$comment": "Source of truth for engine versions. The release pipeline turns this into the signed manifest; the engine-watch workflow bumps 'tag' values (and Dockerfile pins) when upstream ships a release older than the maturity window. Values: {tag} = upstream tag, {bare} = tag without leading v, asset-sha256:NAME = digest of a release asset, tarball-sha256 = sha256 of the tag's source tarball, FROM = rewrite the Dockerfile's FROM line.",
+  "$comment": "Source of truth for engine versions. The release pipeline turns this into the signed manifest; the engine-watch workflow bumps \u0027tag\u0027 values (and Dockerfile pins) when upstream ships a release older than the maturity window. Values: {tag} = upstream tag, {bare} = tag without leading v, asset-sha256:NAME = digest of a release asset, tarball-sha256 = sha256 of the tag\u0027s source tarball, FROM = rewrite the Dockerfile\u0027s FROM line.",
   "engines": [
     {
       "name": "syft",
       "binary": "syft",
       "image": "docker.io/anchore/syft",
-      "upstream": [{ "repo": "anchore/syft", "tag": "v1.18.1", "version": "{tag}" }]
+      "build": null,
+      "upstream": [
+        {
+          "repo": "anchore/syft",
+          "tag": "v1.55.0",
+          "version": "{tag}",
+          "dockerfile": null
+        }
+      ],
+      "version": "v1.55.0"
     },
     {
       "name": "osv-scanner",
       "binary": "osv-scanner",
       "image": "ghcr.io/google/osv-scanner",
-      "upstream": [{ "repo": "google/osv-scanner", "tag": "v2.0.0", "version": "{tag}" }]
+      "build": null,
+      "upstream": [
+        {
+          "repo": "google/osv-scanner",
+          "tag": "v2.7.0",
+          "version": "{tag}",
+          "dockerfile": null
+        }
+      ],
+      "version": "v2.7.0"
     },
     {
       "name": "gitleaks",
       "binary": "gitleaks",
       "image": "ghcr.io/gitleaks/gitleaks",
-      "upstream": [{ "repo": "gitleaks/gitleaks", "tag": "v8.30.1", "version": "{tag}" }]
+      "build": null,
+      "upstream": [
+        {
+          "repo": "gitleaks/gitleaks",
+          "tag": "v8.30.1",
+          "version": "{tag}",
+          "dockerfile": null
+        }
+      ],
+      "version": "v8.30.1"
     },
     {
       "name": "opengrep",
@@ -35,7 +62,8 @@
             "SHA256_ARM64": "asset-sha256:opengrep_manylinux_aarch64"
           }
         }
-      ]
+      ],
+      "version": "v1.33.1"
     },
     {
       "name": "cppcheck",
@@ -47,9 +75,13 @@
           "repo": "cppcheck-opensource/cppcheck",
           "tag": "2.22.0",
           "version": "{tag}",
-          "dockerfile": { "VERSION": "{tag}", "SOURCE_SHA256": "tarball-sha256" }
+          "dockerfile": {
+            "VERSION": "{tag}",
+            "SOURCE_SHA256": "tarball-sha256"
+          }
         }
-      ]
+      ],
+      "version": "2.22.0"
     },
     {
       "name": "lizard",
@@ -61,21 +93,43 @@
           "repo": "terryyin/lizard",
           "tag": "1.24.3",
           "version": "{tag}",
-          "dockerfile": { "VERSION": "{tag}", "SOURCE_SHA256": "tarball-sha256" }
+          "dockerfile": {
+            "VERSION": "{tag}",
+            "SOURCE_SHA256": "tarball-sha256"
+          }
         }
-      ]
+      ],
+      "version": "1.24.3"
     },
     {
       "name": "trivy",
       "binary": "trivy",
       "image": "ghcr.io/aquasecurity/trivy",
-      "upstream": [{ "repo": "aquasecurity/trivy", "tag": "v0.76.1", "version": "{bare}" }]
+      "build": null,
+      "upstream": [
+        {
+          "repo": "aquasecurity/trivy",
+          "tag": "v0.76.1",
+          "version": "{bare}",
+          "dockerfile": null
+        }
+      ],
+      "version": "0.76.1"
     },
     {
       "name": "zap",
       "binary": "zap-baseline.py",
       "image": "docker.io/zaproxy/zap-stable",
-      "upstream": [{ "repo": "zaproxy/zaproxy", "tag": "v2.17.0", "version": "{bare}" }]
+      "build": null,
+      "upstream": [
+        {
+          "repo": "zaproxy/zaproxy",
+          "tag": "v2.17.0",
+          "version": "{bare}",
+          "dockerfile": null
+        }
+      ],
+      "version": "2.17.0"
     },
     {
       "name": "nuclei",
@@ -87,14 +141,21 @@
           "repo": "projectdiscovery/nuclei",
           "tag": "v3.11.1",
           "version": "{tag}",
-          "dockerfile": { "NUCLEI_VERSION": "{tag}" }
+          "dockerfile": {
+            "NUCLEI_VERSION": "{tag}"
+          }
         },
         {
           "repo": "projectdiscovery/nuclei-templates",
           "tag": "v10.5.1",
-          "dockerfile": { "TEMPLATES_VERSION": "{bare}", "TEMPLATES_SHA256": "tarball-sha256" }
+          "version": null,
+          "dockerfile": {
+            "TEMPLATES_VERSION": "{bare}",
+            "TEMPLATES_SHA256": "tarball-sha256"
+          }
         }
-      ]
+      ],
+      "version": "v3.11.1"
     }
   ]
 }
